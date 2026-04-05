@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@flow-os/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@flow-os/db": [
+        "../../packages/db/src/index.ts"
+      ],
+      "@flow-os/brain": [
+        "../../packages/brain/src/index.ts"
+      ],
+      "@flow-os/brain/*": [
+        "../../packages/brain/src/*"
+      ],
+      "@flow-os/templates": [
+        "../../packages/templates/src/index.ts"
+      ],
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "allowJs": true,
+    "noEmit": true,
+    "isolatedModules": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

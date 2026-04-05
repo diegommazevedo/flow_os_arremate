@@ -1,0 +1,808 @@
+// FlowOS v4 — Schema Universal
+// Deal.meta: Json absorve qualquer especificidade de setor sem colunas novas.
+// Trocar de setor = novo ZodSchema, zero migrations.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 1 — WORKSPACE (tenant)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Workspace {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  sector      String   // "real-estate" | "clinic" | "law-firm" | "construction" | "hospitality"
+  settings    Json     @default("{}")   // configurações do setor (nunca schema do core)
+  logoUrl     String?
+  planTier    String   @default("free") // free | starter | pro | enterprise
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members          Member[]
+  stages           Stage[]
+  deals            Deal[]
+  contacts         Contact[]
+  tasks            Task[]
+  flows            Flow[]
+  agents           Agent[]
+  memories         BrainMemory[]
+  knowledgeChunks  KnowledgeChunk[]
+  auditLogs        AgentAuditLog[]
+  usageMetrics     BrainUsageMetric[]
+  rpaLogs          RpaLog[]
+  documents        Document[]
+  notes            DealNote[]
+  savedFilters     SavedFilter[]
+  chatSessions     ChatSession[]
+  chatNotes        ChatNote[]
+  chatTags         ChatTag[]
+  departments      Department[]
+  respostasRapidas RespostaRapida[]
+  integrations     WorkspaceIntegration[]
+  agentConfigs     AgentConfig[]
+  protocols        Protocol[]
+  protocolMessages ProtocolMessage[]
+  internalChannels InternalChannel[]
+  internalMessages InternalMessage[]
+  emailAccounts    EmailAccount[]
+  emails           Email[]
+
+  @@map("workspaces")
+}
+
+model Member {
+  id          String     @id @default(cuid())
+  workspaceId String
+  userId      String     // Supabase Auth UUID
+  role        MemberRole @default(MEMBER)
+  joinedAt    DateTime   @default(now())
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("members")
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 3 — KANBAN (Stage + Deal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Stage {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String   @default("#6366f1")
+  position    Int
+  wipLimit    Int?     // Work-In-Progress limit (null = sem limite)
+  slaDays     Int?     // SLA máximo em dias (null = sem SLA)
+  isWon       Boolean  @default(false)
+  isLost      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deals       Deal[]
+
+  @@unique([workspaceId, position])
+  @@map("stages")
+}
+
+model Deal {
+  id          String    @id @default(cuid())
+  workspaceId String
+  stageId     String
+  title       String
+  value       Decimal?  @db.Decimal(15, 2)
+  probability Int?      @default(50) // 0-100%
+  ownerId     String?   // userId do responsável
+  contactId   String?
+  closedAt    DateTime?
+  expectedCloseDate DateTime?
+  lostReason  String?
+  // ── O campo universal — toda especificidade de setor vive aqui ──
+  meta        Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stage       Stage     @relation(fields: [stageId], references: [id])
+  contact     Contact?  @relation(fields: [contactId], references: [id])
+  tasks       Task[]
+  flowEvents  FlowEvent[]
+  documents   Document[]
+  notes       DealNote[]
+  protocols   Protocol[]
+  internalChannels InternalChannel[]
+  internalMessages InternalMessage[]
+  protocolSeq Int       @default(0)
+
+  @@index([workspaceId, stageId])
+  @@index([workspaceId, ownerId])
+  @@map("deals")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCUMENT (artefatos gerados: PDF, planilhas, certidões)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Document {
+  id          String    @id @default(cuid())
+  workspaceId String
+  dealId      String?
+  name        String
+  url         String    @db.Text   // presigned URL ou URL permanente
+  contentType String    @default("application/pdf")
+  collection  String    // "deal_docs" | "contracts" | "certificates"
+  sizeBytes   Int?
+  expiresAt   DateTime? // TTL do presigned URL (null = permanente)
+  meta        Json      @default("{}")
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal        Deal?     @relation(fields: [dealId], references: [id])
+
+  @@index([workspaceId])
+  @@index([dealId])
+  @@map("documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTATO
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Contact {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  email       String?
+  phone       String?
+  document    String?  // CPF/CNPJ (armazenado encriptado — SEC-11)
+  type        ContactType @default(PERSON)
+  meta        Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deals       Deal[]
+
+  @@index([workspaceId])
+  @@map("contacts")
+}
+
+enum ContactType {
+  PERSON
+  COMPANY
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 2 — EISENHOWER (Task)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Task {
+  id          String          @id @default(cuid())
+  workspaceId String
+  dealId      String?
+  title       String
+  description String?
+  type        String?
+  assigneeId  String?         // userId
+  aparelhoOrigem String?
+  /// Canal omnichannel (espelha JSON em description quando preenchido).
+  channel     String?
+  /// WhatsApp grupo Evolution: id estável para uma task por grupo.
+  groupId     String?
+  quadrant    EisenhowerQuadrant @default(Q4_ELIMINATE)
+  priority    TaskPriority    @default(MEDIUM)
+  urgent      Boolean         @default(false)
+  important   Boolean         @default(false)
+  dueAt       DateTime?
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal        Deal?     @relation(fields: [dealId], references: [id])
+  chatSession ChatSession?
+  protocols   Protocol[]
+
+  @@index([workspaceId, assigneeId])
+  @@index([workspaceId, quadrant])
+  @@index([workspaceId, channel])
+  @@index([workspaceId, groupId])
+  @@map("tasks")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum EisenhowerQuadrant {
+  Q1_DO      // Urgente + Importante
+  Q2_PLAN    // Não urgente + Importante
+  Q3_DELEGATE // Urgente + Não importante
+  Q4_ELIMINATE // Não urgente + Não importante
+}
+
+enum ChatStatus {
+  ABERTO
+  EM_ATENDIMENTO
+  AGUARDANDO
+  RESOLVIDO
+  FECHADO
+  INDEFINIDO
+}
+
+enum ProtocolChannel {
+  WHATSAPP
+  PWA
+  INTERNO
+}
+
+enum MessageDirection {
+  IN
+  OUT
+  NOTE
+}
+
+enum InternalChannelType {
+  CANAL
+  DIRETO
+  DEAL_THREAD
+}
+
+enum InternalMessageType {
+  TEXTO
+  ALERTA_Q1
+  DEAL_REF
+  PROTOCOL_REF
+  SISTEMA
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 4 — MOTOR DE FLUXOS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DealNote {
+  id          String   @id @default(cuid())
+  workspaceId String
+  dealId      String
+  authorId    String
+  authorName  String
+  content     String   @db.Text
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, dealId])
+  @@map("deal_notes")
+}
+
+model ChatSession {
+  id                String     @id @default(cuid())
+  workspaceId       String
+  taskId            String     @unique
+  status            ChatStatus @default(ABERTO)
+  responsavelId     String?
+  departamentoId    String?
+  aparelhoOrigem    String?
+  chatbotAtivo      Boolean    @default(true)
+  arquivado         Boolean    @default(false)
+  favorito          Boolean    @default(false)
+  unreadCount       Int        @default(0)
+  totalAtendimentos Int        @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  workspace         Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task              Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  notas             ChatNote[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, departamentoId])
+  @@index([workspaceId, arquivado])
+  @@index([workspaceId, favorito])
+  @@map("chat_sessions")
+}
+
+model ChatNote {
+  id           String      @id @default(cuid())
+  workspaceId  String
+  taskId       String
+  conteudo     String      @db.Text
+  autorId      String
+  pinned       Boolean     @default(false)
+  visivelNoBot Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session      ChatSession @relation(fields: [taskId], references: [taskId], onDelete: Cascade)
+
+  @@index([workspaceId, taskId])
+  @@map("chat_notes")
+}
+
+model ChatTag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  descricao   String
+  corFundo    String   @default("#6366f1")
+  corTexto    String   @default("#ffffff")
+  ordem       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, descricao])
+  @@index([workspaceId])
+  @@map("chat_tags")
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  workspaceId String
+  nome        String
+  membros     String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, nome])
+  @@index([workspaceId])
+  @@map("departments")
+}
+
+model RespostaRapida {
+  id          String   @id @default(cuid())
+  workspaceId String
+  atalho      String
+  texto       String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, atalho])
+  @@index([workspaceId])
+  @@map("respostas_rapidas")
+}
+
+model Protocol {
+  id            String          @id @default(cuid())
+  workspaceId   String
+  number        String          @unique
+  dealId        String
+  taskId        String?
+  status        ChatStatus      @default(ABERTO)
+  canal         ProtocolChannel @default(WHATSAPP)
+  assunto       String?
+  resolvidoEm   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal          Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  task          Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  mensagens     ProtocolMessage[]
+  internalLinks InternalMessage[]
+
+  @@index([workspaceId, dealId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, number])
+  @@map("protocols")
+}
+
+model ProtocolMessage {
+  id          String           @id @default(cuid())
+  workspaceId String
+  protocolId  String
+  direction   MessageDirection
+  canal       ProtocolChannel
+  conteudo    String           @db.Text
+  autorId     String?
+  templateId  String?
+  lido        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  protocol    Protocol         @relation(fields: [protocolId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, protocolId])
+  @@index([workspaceId, createdAt])
+  @@map("protocol_messages")
+}
+
+model InternalChannel {
+  id          String              @id @default(cuid())
+  workspaceId String
+  nome        String
+  tipo        InternalChannelType @default(CANAL)
+  dealId      String?
+  membros     String[]
+  createdAt   DateTime            @default(now())
+
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal        Deal?               @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  mensagens   InternalMessage[]
+
+  @@unique([workspaceId, nome])
+  @@index([workspaceId, tipo])
+  @@map("internal_channels")
+}
+
+model InternalMessage {
+  id          String              @id @default(cuid())
+  workspaceId String
+  channelId   String
+  autorId     String
+  conteudo    String              @db.Text
+  tipo        InternalMessageType @default(TEXTO)
+  dealId      String?
+  protocolId  String?
+  editado     Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel     InternalChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  deal        Deal?               @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  protocol    Protocol?           @relation(fields: [protocolId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, channelId])
+  @@index([workspaceId, createdAt])
+  @@map("internal_messages")
+}
+
+model SavedFilter {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  field       String
+  operator    String
+  value       String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("saved_filters")
+}
+
+model Flow {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  trigger     Json        // { type: 'event'|'cron'|'webhook'|'manual', config: {...} }
+  isActive    Boolean     @default(true)
+  version     Int         @default(1)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  steps       FlowStep[]
+  events      FlowEvent[]
+
+  @@index([workspaceId, isActive])
+  @@map("flows")
+}
+
+model FlowStep {
+  id          String   @id @default(cuid())
+  flowId      String
+  position    Int
+  type        FlowStepType
+  condition   Json?    // guarda booleano opcional
+  action      Json     // { type: 'email'|'task'|'agent'|'webhook'|'stage_change', config: {...} }
+  createdAt   DateTime @default(now())
+
+  flow        Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@unique([flowId, position])
+  @@map("flow_steps")
+}
+
+enum FlowStepType {
+  CONDITION
+  ACTION
+  AGENT_CALL
+  WAIT
+  BRANCH
+}
+
+model FlowEvent {
+  id          String          @id @default(cuid())
+  workspaceId String
+  flowId      String
+  dealId      String?
+  status      FlowEventStatus @default(PENDING)
+  triggeredAt DateTime        @default(now())
+  completedAt DateTime?
+  error       String?
+  payload     Json            @default("{}")
+
+  flow        Flow    @relation(fields: [flowId], references: [id])
+  deal        Deal?   @relation(fields: [dealId], references: [id])
+
+  @@index([workspaceId, flowId])
+  @@map("flow_events")
+}
+
+enum FlowEventStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 5 — AGENTRUNTIME
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Agent {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  name               String
+  persona            String   @default("Assistente profissional e objetivo.")
+  skills             String[] // lista de tool-ids permitidos
+  monthlyBudgetUsd   Decimal  @default(50) @db.Decimal(8, 2)
+  usedBudgetThisMonth Decimal @default(0)  @db.Decimal(8, 2)
+  isActive           Boolean  @default(true)
+  meta               Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  memories    BrainMemory[]
+  auditLogs   AgentAuditLog[]
+
+  @@index([workspaceId])
+  @@map("agents")
+}
+
+model AgentAuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  agentId     String
+  action      String   // ex: "deal.create", "task.assign", "flow.trigger"
+  input       Json
+  output      Json
+  modelUsed   String
+  tokensUsed  Int
+  costUsd     Decimal  @db.Decimal(8, 6)
+  durationMs  Int
+  success     Boolean
+  error       String?
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent       Agent     @relation(fields: [agentId], references: [id])
+
+  // Append-only: sem updates, sem deletes (garantido por RLS no Supabase)
+  @@index([workspaceId, agentId])
+  @@index([createdAt])
+  @@map("agent_audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 6 — BRAIN IA (memória + métricas)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model BrainMemory {
+  id          String   @id @default(cuid())
+  workspaceId String
+  agentId     String
+  content     String   // fragmento de conhecimento
+  /// pgvector — busca semântica por similaridade cosine
+  /// Gerado via text-embedding-3-small (1536 dims)
+  embedding   Unsupported("vector(1536)")?
+  source      String   // "interaction" | "pattern" | "manual"
+  relevance   Float    @default(1.0)
+  expiresAt   DateTime // TTL: 90 dias por padrão
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent       Agent     @relation(fields: [agentId], references: [id])
+
+  @@index([workspaceId, agentId])
+  @@map("brain_memories")
+}
+
+// ─── Knowledge Chunks (RAG) ───────────────────────────────────────────────────
+// Fragmentos de documentos/bases de conhecimento com embedding para RAG.
+// Separado do BrainMemory: Memória = histórico de interações;
+//                          KnowledgeChunk = documentos indexados pelo workspace.
+
+model KnowledgeChunk {
+  id          String   @id @default(cuid())
+  workspaceId String
+  /// Origem do chunk: "document" | "manual" | "web" | "integration"
+  source      String
+  /// Título ou referência do documento original
+  title       String
+  /// Conteúdo textual do chunk (max ~8k chars para caber no contexto)
+  content     String   @db.Text
+  /// Hash SHA-256 do conteúdo para deduplicação
+  contentHash String
+  /// Embedding OpenAI text-embedding-3-small — 1536 dims
+  embedding   Unsupported("vector(1536)")?
+  /// Metadados arbitrários (página, seção, tags, etc.)
+  meta        Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, contentHash])
+  @@index([workspaceId])
+  @@map("knowledge_chunks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 7 — RPA LOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+model RpaLog {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  agentId      String?   // qual agente/worker disparou
+  status       RpaStatus
+  rowsFound    Int       @default(0)
+  rowsNew      Int       @default(0)
+  rowsSkipped  Int       @default(0)
+  rowsFailed   Int       @default(0)
+  duration     Int       // duração em ms
+  domHash      String?   // SHA-256 do DOM scrapeado
+  dryRun       Boolean   @default(false)
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, createdAt])
+  @@map("rpa_logs")
+}
+
+enum RpaStatus {
+  SUCCESS
+  FAILED
+  LAYOUT_CHANGED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 9 — EMAIL INTEGRADO
+// ─────────────────────────────────────────────────────────────────────────────
+
+model EmailAccount {
+  id          String    @id @default(cuid())
+  workspaceId String
+  tipo        String
+  nome        String
+  email       String
+  config      Json
+  status      String    @default("ACTIVE")
+  lastSyncAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  emails      Email[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId, status])
+  @@map("email_accounts")
+}
+
+model Email {
+  id          String   @id @default(cuid())
+  workspaceId String
+  accountId   String
+  messageId   String   @unique
+  threadId    String?
+  from        String
+  fromName    String?
+  to          String[]
+  cc          String[]
+  subject     String
+  bodyText    String?
+  bodyHtml    String?
+  attachments Json?
+  dealId      String?
+  contactId   String?
+  protocolId  String?
+  eisenhower  String?
+  lido        Boolean  @default(false)
+  respondido  Boolean  @default(false)
+  importante  Boolean  @default(false)
+  rascunho    Boolean  @default(false)
+  enviado     Boolean  @default(false)
+  labels      String[]
+  receivedAt  DateTime
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account     EmailAccount @relation(fields: [accountId], references: [id])
+
+  @@index([workspaceId, dealId])
+  @@index([workspaceId, lido])
+  @@index([workspaceId, receivedAt])
+  @@index([workspaceId, eisenhower])
+  @@map("emails")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 8 — INTEGRAÇÕES + CONFIGURAÇÕES DE AGENTES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WorkspaceIntegration {
+  id          String   @id @default(cuid())
+  workspaceId String
+  type        String   // WHATSAPP_META | WHATSAPP_EVOLUTION | MINIO | EMAIL | PORTAL_JWT
+  name        String
+  config      Json     @default("{}") // credenciais criptografadas em repouso
+  status      String   @default("ACTIVE") // ACTIVE | INACTIVE | ERROR
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("workspace_integrations")
+}
+
+model AgentConfig {
+  id          String   @id @default(cuid())
+  workspaceId String
+  agentName   String   // ex: PAYMENT_RECOVERY | RPA_EXTERNAL | REPORT_GEN | TOKEN_ROUTER
+  config      Json     @default("{}")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, agentName])
+  @@map("agent_configs")
+}
+
+model BrainUsageMetric {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  month           String   // "2026-03"
+  model           String
+  tokensUsed      Int      @default(0)
+  costUsd         Decimal  @default(0) @db.Decimal(10, 4)
+  requestCount    Int      @default(0)
+  cacheHitCount   Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, month, model])
+  @@map("brain_usage_metrics")
+}

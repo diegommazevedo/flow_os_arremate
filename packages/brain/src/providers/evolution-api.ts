@@ -1,0 +1,145 @@
+import { db } from "@flow-os/db";
+import { ensureInstanceOpen } from "../evolution/instance-state.js";
+
+async function resolveAuditAgentId(workspaceId: string): Promise<string | null> {
+  const agent = await db.agent.findFirst({
+    where: { workspaceId },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return agent?.id ?? null;
+}
+
+async function writeAuditLog(params: {
+  workspaceId: string;
+  action: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  durationMs: number;
+  success: boolean;
+  error?: string;
+}): Promise<void> {
+  const agentId = await resolveAuditAgentId(params.workspaceId);
+  if (!agentId) return;
+  type JsonValue = Parameters<typeof db.agentAuditLog.create>[0]["data"]["input"];
+
+  await db.agentAuditLog.create({
+    data: {
+      workspaceId: params.workspaceId,
+      agentId,
+      action: params.action,
+      input: params.input as JsonValue,
+      output: params.output as JsonValue,
+      modelUsed: "none",
+      tokensUsed: 0,
+      costUsd: 0,
+      durationMs: params.durationMs,
+      success: params.success,
+      ...(params.error ? { error: params.error } : {}),
+    },
+  });
+}
+
+export class EvolutionApiProvider {
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+
+  constructor() {
+    this.baseUrl = process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080";
+    this.apiKey = process.env["EVOLUTION_API_KEY"] ?? "";
+  }
+
+  async sendText(
+    instance: string,
+    phone: string,
+    message: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const res = await fetch(`${this.baseUrl}/message/sendText/${instance}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: this.apiKey,
+      },
+      body: JSON.stringify({
+        number: phone,
+        text: message,
+        options: { delay: 1200, presence: "composing" },
+      }),
+    });
+
+    await writeAuditLog({
+      workspaceId,
+      action: "evolution_send_text",
+      input: { instance, phoneSuffix: phone.slice(-4) },
+      output: { status: res.status },
+      durationMs: Date.now() - startedAt,
+      success: res.ok,
+      ...(res.ok ? {} : { error: `HTTP ${res.status}` }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Evolution sendText failed: ${res.status}`);
+    }
+  }
+
+  async sendMedia(
+    instance: string,
+    phone: string,
+    mediaUrl: string,
+    mediaType: "image" | "document" | "audio" | "video",
+    caption: string,
+    workspaceId: string,
+  ): Promise<void> {
+    await ensureInstanceOpen(instance, { baseUrl: this.baseUrl, apiKey: this.apiKey });
+
+    const startedAt = Date.now();
+    const res = await fetch(`${this.baseUrl}/message/sendMedia/${instance}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: this.apiKey,
+      },
+      body: JSON.stringify({
+        number: phone,
+        mediatype: mediaType,
+        media: mediaUrl,
+        caption,
+      }),
+    });
+
+    await writeAuditLog({
+      workspaceId,
+      action: "evolution_send_media",
+      input: { instance, phoneSuffix: phone.slice(-4), mediaType },
+      output: { status: res.status },
+      durationMs: Date.now() - startedAt,
+      success: res.ok,
+      ...(res.ok ? {} : { error: `HTTP ${res.status}` }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Evolution sendMedia failed: ${res.status}`);
+    }
+  }
+
+  async getQRCode(instance: string): Promise<string> {
+    const res = await fetch(`${this.baseUrl}/instance/connect/${instance}`, {
+      headers: { apikey: this.apiKey },
+    });
+    const data = (await res.json()) as { code?: string; qrcode?: string };
+    return data.code ?? data.qrcode ?? "";
+  }
+
+  async getStatus(instance: string): Promise<"open" | "close" | "connecting"> {
+    const res = await fetch(`${this.baseUrl}/instance/connectionState/${instance}`, {
+      headers: { apikey: this.apiKey },
+    });
+    const data = (await res.json()) as { instance?: { state?: "open" | "close" | "connecting" } };
+    return data.instance?.state ?? "close";
+  }
+}
+
+export const evolutionApi = new EvolutionApiProvider();

@@ -1,0 +1,80 @@
+/* @import must come before Tailwind directives (PostCSS rule) */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-800;
+  }
+
+  :root {
+    --sidebar-width: 220px;
+    --header-height: 52px;
+
+    /* Superficies */
+    --surface-base:    #0A0A0F;
+    --surface-raised:  #111118;
+    --surface-overlay: #1A1A24;
+    --surface-hover:   #1E1E2A;
+    --surface-active:  #252532;
+
+    /* Bordas */
+    --border-subtle:  rgba(255,255,255,0.06);
+    --border-default: rgba(255,255,255,0.10);
+    --border-strong:  rgba(255,255,255,0.18);
+
+    /* Texto */
+    --text-primary:   #F0F0F5;
+    --text-secondary: #8B8B9E;
+    --text-tertiary:  #52525E;
+    --text-accent:    #7C6AF7;
+
+    /* Semanticas */
+    --color-q1:       #E84040;
+    --color-q2:       #3B82F6;
+    --color-q3:       #F59E0B;
+    --color-success:  #22C55E;
+    --color-whatsapp: #22C55E;
+
+    /* Tipografia */
+    --font-display: 'DM Sans', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    /* Raios */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+  }
+
+  body {
+    background-color: var(--surface-base);
+    color: var(--text-primary);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-dot {
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  .animate-msg-fadein {
+    animation: msg-fadein 200ms ease forwards;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.85); }
+}
+
+@keyframes msg-fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+

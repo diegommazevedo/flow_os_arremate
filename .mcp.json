@@ -1,0 +1,53 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "context7"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "sequential-thinking"
+      ]
+    },
+    "21st-magic": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "21st-magic"
+      ]
+    },
+    "playwright": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "playwright"
+      ]
+    },
+    "filesystem": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "filesystem"
+      ]
+    },
+    "github": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "github"
+      ]
+    },
+    "semgrep": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-run.cjs",
+        "semgrep"
+      ]
+    }
+  }
+}

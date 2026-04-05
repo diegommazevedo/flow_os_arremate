@@ -1,0 +1,23 @@
+
+> flow-os@4.0.0 typecheck C:\dev\flow_os
+> pnpm -r typecheck
+
+Scope: 5 of 6 workspace projects
+packages/db typecheck$ tsc --noEmit
+packages/core typecheck$ tsc --noEmit
+packages/core typecheck: src/security/encrypt.ts(14,75): error TS2307: Cannot find module 'node:crypto' or its corresponding type declarations.
+packages/core typecheck: src/security/encrypt.ts(20,20): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(21,15): error TS2580: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(24,18): error TS2580: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(25,54): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(27,33): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(28,32): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(30,51): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(39,21): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(43,10): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: src/security/encrypt.ts(49,18): error TS2580: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
+packages/core typecheck: Failed
+C:\dev\flow_os\packages\core:
+?ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL? @flow-os/core@4.0.0 typecheck: `tsc --noEmit`
+Exit status 1
+?ELIFECYCLE? Command failed with exit code 1.

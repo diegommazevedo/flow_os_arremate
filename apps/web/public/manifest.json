@@ -1,0 +1,23 @@
+{
+  "name": "Arrematador Caixa — Meu Imóvel",
+  "short_name": "Meu Imóvel",
+  "description": "Acompanhe todas as etapas do seu imóvel arrematado em um só lugar",
+  "start_url": "/portal",
+  "scope": "/portal",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["business", "finance"],
+  "prefer_related_applications": false
+}

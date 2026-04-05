@@ -1,0 +1,33 @@
+{
+  "name": "flow-os",
+  "version": "4.0.0",
+  "private": true,
+  "description": "FlowOS v4 — O Linux dos Negócios. Núcleo imutável, templates infinitos.",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm --filter @flow-os/web dev",
+    "build": "pnpm --filter @flow-os/core build && pnpm --filter @flow-os/web build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @flow-os/db generate",
+    "db:migrate": "pnpm --filter @flow-os/db migrate:dev",
+    "db:push": "pnpm --filter @flow-os/db push",
+    "db:setup": "pnpm --filter @flow-os/db setup",
+    "db:studio": "pnpm --filter @flow-os/db studio",
+    "db:seed": "pnpm --filter @flow-os/db seed",
+    "migrate:pipedrive": "pnpm --filter @flow-os/db migrate:pipedrive --",
+    "diagnose": "npx tsx scripts/diagnose.ts"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "tsx": "^4.19.1"
+  }
+}

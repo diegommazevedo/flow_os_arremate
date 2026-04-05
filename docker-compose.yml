@@ -1,0 +1,156 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: flowos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowos_dev}
+      POSTGRES_DB: flowos_prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowos -d flowos_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"   # console web
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Next.js web app
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - apps/web/.env.production
+    ports:
+      - "3030:3000"   # externo 3030 → Next.js interno 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://flowos:${POSTGRES_PASSWORD:-flowos_dev}@postgres:5432/flowos_prod
+      REDIS_URL: redis://redis:6379
+      NEXT_PUBLIC_APP_URL: http://localhost:3030
+
+  # Worker Brain IA (BullMQ — PaymentRecovery + RPA + Relatorio)
+  brain-worker:
+    build:
+      context: .
+      dockerfile: packages/brain/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - packages/brain/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://flowos:${POSTGRES_PASSWORD:-flowos_dev}@postgres:5432/flowos_prod
+      REDIS_URL: redis://redis:6379
+
+  evolution-api:
+    image: atendai/evolution-api:v2.2.3
+    container_name: flow_os-evolution-1
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://localhost:8080
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-flowos-evolution-2026}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - QRCODE_LIMIT=30
+      - DEL_INSTANCE=false
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://flowos:${POSTGRES_PASSWORD:-flowos_dev}@host.docker.internal:5433/flowos_prod?schema=evolution_public
+      - DATABASE_CONNECTION_CLIENT_NAME=flow_os
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://host.docker.internal:6379/6
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=false
+      - CACHE_LOCAL_ENABLED=false
+      - LOG_LEVEL=ERROR,WARN,INFO,LOG,DEBUG,VERBOSE,WEBHOOKS
+      - LOG_COLOR=true
+      - LOG_BAILEYS=debug
+      - CONFIG_SESSION_PHONE_VERSION=
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - WEBHOOK_GLOBAL_URL=https://gnarlier-anh-copyrightable.ngrok-free.dev/api/webhooks/evolution
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+      - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+      - WEBHOOK_EVENTS_MESSAGES_UPDATE=true
+    volumes:
+      - evolution_data:/evolution/instances
+
+  mailserver:
+    image: docker.io/mailserver/docker-mailserver:latest
+    container_name: flow_os-mailserver
+    hostname: mail.flowos.local
+    restart: unless-stopped
+    ports:
+      - "25:25"
+      - "143:143"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - mailserver_data:/var/mail
+      - mailserver_state:/var/mail-state
+      - mailserver_config:/tmp/docker-mailserver
+    environment:
+      - ENABLE_IMAP=1
+      - ENABLE_POP3=0
+      - SSL_TYPE=self-signed
+      - POSTMASTER_ADDRESS=admin@flowos.local
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  evolution_data:
+  mailserver_data:
+  mailserver_state:
+  mailserver_config:
+
+networks:
+  flow_os_network:
+    driver: bridge

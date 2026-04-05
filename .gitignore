@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Turborepo / build outputs
+.turbo/
+dist/
+build/
+coverage/
+
+# Logs
+*.log
+.logs/
+
+# Env files
+.env
+.env.*
+
+# Local/editor dirs
+.cursor/
+.claude/
+.codex-import-files*/
+
+# Backups / snapshots
+backups/
+
+# OS files
+.DS_Store
+Thumbs.db
+

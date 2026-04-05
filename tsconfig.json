@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "jsx": "preserve",
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "incremental": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@flow-os/core": ["./packages/core/src/index.ts"],
+      "@flow-os/db": ["./packages/db/src/index.ts"],
+      "@flow-os/brain": ["./packages/brain/src/index.ts"],
+      "@flow-os/templates": ["./packages/templates/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next", "build"]
+}
