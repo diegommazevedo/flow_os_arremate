@@ -7,7 +7,9 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
+type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
 export async function middleware(request: NextRequest) {
   // ── Diagnóstico ────────────────────────────────────────────────────────────
@@ -19,14 +21,14 @@ export async function middleware(request: NextRequest) {
   response.headers.set("x-flowos-request-id", requestId);
 
   // ── Supabase session refresh ───────────────────────────────────────────────
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"];
+  const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
 
   if (supabaseUrl && supabaseAnon) {
     const supabase = createServerClient(supabaseUrl, supabaseAnon, {
       cookies: {
         getAll: () => request.cookies.getAll(),
-        setAll: (cookiesToSet) => {
+        setAll: (cookiesToSet: CookieToSet[]) => {
           // Propaga cookies para o request (server components enxergam)
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
@@ -36,7 +38,11 @@ export async function middleware(request: NextRequest) {
           response.headers.set("x-flowos-request-id", requestId);
           // Seta cookies no response (browser persiste)
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
+            if (options) {
+              response.cookies.set(name, value, options);
+            } else {
+              response.cookies.set(name, value);
+            }
           });
         },
       },
