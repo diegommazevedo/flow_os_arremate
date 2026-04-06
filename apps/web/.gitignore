@@ -1,0 +1,4 @@
+# Saída do next-pwa — não versionar (evita SW desalinhado com chunks _next)
+public/sw.js
+public/workbox-*.js
+public/swe-worker-*.js
