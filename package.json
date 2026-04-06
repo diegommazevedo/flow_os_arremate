@@ -10,6 +10,7 @@
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "dev": "pnpm --filter @flow-os/web dev",
+    "start": "pnpm --filter @flow-os/web start",
     "build": "pnpm --filter @flow-os/core build && pnpm --filter @flow-os/web build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
