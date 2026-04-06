@@ -49,6 +49,48 @@
     --radius-lg: 12px;
   }
 
+  /* Tema operacional — claro, leitura rápida */
+  html.operational {
+    --surface-base:    #E8EAF1;
+    --surface-raised:  #DDE1EB;
+    --surface-overlay: #F2F4FA;
+    --surface-hover:   #D2D6E2;
+    --surface-active:  #C8CDDC;
+    --text-primary:    #12122A;
+    --text-secondary:  #4B4B68;
+    --text-tertiary:   #7878A0;
+    --text-accent:     #4338CA;
+    --color-q1:        #DC2626;
+    --color-q2:        #2563EB;
+    --color-q3:        #D97706;
+    --color-success:   #059669;
+    --color-whatsapp:  #059669;
+    --border-subtle:   rgba(18, 18, 42, 0.06);
+    --border-default:  rgba(18, 18, 42, 0.12);
+    --border-strong:   rgba(18, 18, 42, 0.2);
+  }
+
+  /* Tema Chromatic — contraste vivo */
+  html.chromatic {
+    --surface-base:    #0D0D1A;
+    --surface-raised:  #12122B;
+    --surface-overlay: #1A1A3E;
+    --surface-hover:   #22224A;
+    --surface-active:  #2A2A58;
+    --text-primary:    #F0EFFF;
+    --text-secondary:  #9B9BC8;
+    --text-tertiary:   #5A5A8A;
+    --text-accent:     #FF6B6B;
+    --color-q1:        #FF4B4B;
+    --color-q2:        #4B9EFF;
+    --color-q3:        #FFB84B;
+    --color-success:   #4BFF9E;
+    --color-whatsapp:  #4BFF9E;
+    --border-subtle:   rgba(255, 107, 107, 0.08);
+    --border-default:  rgba(255, 107, 107, 0.15);
+    --border-strong:   rgba(255, 107, 107, 0.24);
+  }
+
   body {
     background-color: var(--surface-base);
     color: var(--text-primary);
