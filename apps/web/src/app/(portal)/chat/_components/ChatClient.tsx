@@ -121,10 +121,11 @@ function relTime(ms: number): string {
 }
 
 function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  const cleaned = name.replace(/@\w+/g, "").replace(/[._\-]/g, " ").trim();
+  const words = cleaned.split(/\s+/).filter(w => /[a-zA-ZÀ-ú]/.test(w));
+  if (words.length === 0) return "WA";  // fallback — nunca mostra dígitos puros
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return (words[0]![0]! + words[1]![0]!).toUpperCase();
 }
 
 function dayGreeting(): string {
@@ -160,7 +161,9 @@ function ConvRow({
     ? conv.aparelhoOrigem.length > 8
       ? conv.aparelhoOrigem.slice(0, 8)
       : conv.aparelhoOrigem
-    : maskPhone(conv.contactPhone);
+    : conv.contactPhone
+      ? maskPhone(conv.contactPhone)
+      : "";
 
   const convUi = conv as Conversation & {
     lastMessageFromMe?: boolean;
@@ -240,10 +243,12 @@ function ConvRow({
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)' }} className="leading-none">{relTime(conv.lastAt)}</span>
             {conv.unreadCount > 0 && (
               <span
-                className="shrink-0"
-                style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-whatsapp)', display: 'inline-block' }}
+                className="shrink-0 flex items-center justify-center text-white font-semibold"
+                style={{ minWidth: '18px', height: '18px', borderRadius: '9px', background: 'var(--color-whatsapp)', fontSize: '10px', padding: '0 5px', fontFamily: 'var(--font-mono)' }}
                 title={`${conv.unreadCount} não lidas`}
-              />
+              >
+                {conv.unreadCount}
+              </span>
             )}
           </div>
         </div>

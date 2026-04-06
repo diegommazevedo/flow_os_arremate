@@ -121,6 +121,28 @@ function channelForChatLog(log: { action: string; input: unknown }): ChannelType
   return "INTERNAL";
 }
 
+// ─── Name / Preview helpers ───────────────────────────────────────────────────
+
+/** Limpa nomes técnicos (@lid, IDs numéricos puros) → fallback para telefone formatado. */
+function cleanContactName(rawName: string, phone: string): string {
+  const n = rawName.trim();
+  const isRawId = n.includes("@lid") || n.includes("@g.us") || n.includes("@s.whatsapp.net") || /^\d{10,}$/.test(n);
+  if (isRawId || n === "") {
+    const digits = phone.replace(/\D/g, "");
+    return digits.length >= 8 ? `+${digits.slice(-11)}` : "Contato WA";
+  }
+  return n;
+}
+
+/** Preview unificado: rawText > mídia placeholder > título da task. */
+function cleanLastMessage(meta: Record<string, unknown>, taskTitle: string | null): string {
+  const raw = String(meta["rawText"] ?? "").trim();
+  if (raw) return raw;
+  // Qualquer tipo de mídia → placeholder único
+  if (meta["mediaKind"] || meta["media"]) return "📎 [mídia]";
+  return taskTitle ?? "";
+}
+
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 /**
@@ -209,13 +231,14 @@ export async function getConversations(workspaceId: string): Promise<Conversatio
       dealTitle:      task.deal?.title ?? task.title ?? "Sem título",
       dealRef:        dealRef || null,
       contactId:      task.deal?.contact?.id ?? null,
-      contactName:    String(
-        descMeta["groupName"] ?? descMeta["name"] ?? task.deal?.contact?.name ?? "Desconhecido",
+      contactName:    cleanContactName(
+        String(descMeta["groupName"] ?? descMeta["name"] ?? task.deal?.contact?.name ?? ""),
+        String(descMeta["phone"] ?? task.deal?.contact?.phone ?? ""),
       ),
       contactPhone:   String(descMeta["phone"] ?? task.deal?.contact?.phone ?? ""),
       channel,
       roomId:         roomId || null,
-      lastMessage:    String(descMeta["rawText"] ?? task.title),
+      lastMessage:    cleanLastMessage(descMeta, task.title),
       lastAt:         task.updatedAt.getTime(),
       unread:         (session?.unreadCount ?? 0) > 0 || task.quadrant === "Q1_DO",
       unreadCount:    session?.unreadCount ?? 0,
