@@ -15,16 +15,27 @@
  *   5. averbação EM_TRATAMENTO (IMOV-004-RJ) → averbacaoFlag=true no meta
  */
 
+import fs           from "node:fs";
+import os           from "node:os";
 import path         from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runRpaCaixa, type RpaDeps, type RpaCaixaConfig } from "../rpa-caixa";
 
 // ─── Mocks do banco ────────────────────────────────────────────────────────────
 
-const FIXTURE_PATH = path.resolve(
+const futureDate = new Date();
+futureDate.setDate(futureDate.getDate() + 90);
+const prazo = futureDate.toLocaleDateString("pt-BR");
+
+const FIXTURE_SOURCE = path.resolve(
   import.meta.dirname,
   "../__fixtures__/caixa-deals.csv",
 );
+const FIXTURE_PATH = path.join(os.tmpdir(), "flowos-rpa-caixa-deals.csv");
+{
+  const csvRaw = fs.readFileSync(FIXTURE_SOURCE, "utf8");
+  fs.writeFileSync(FIXTURE_PATH, csvRaw.replace(/05\/04\/2026/g, prazo), "utf8");
+}
 
 // Armazena criações para verificar nos testes
 interface MockDeal {
@@ -194,7 +205,7 @@ describe("RPA Caixa Worker — DRY_RUN=true (fixture CSV)", () => {
     expect(deal).toBeDefined();
     expect(deal!.meta["subtype"]).toBe("FINANCIAMENTO");
     expect(deal!.meta["uf"]).toBe("SP");
-    expect(deal!.meta["eisenhower"]).toBe("Q2_PLAN"); // prazo 05/04 > 48h
+    expect(deal!.meta["eisenhower"]).toBe("Q2_PLAN"); // prazo +90d > 48h
 
     // Contato criado
     const contact = createdContacts.find(c => c.name.includes("João"));

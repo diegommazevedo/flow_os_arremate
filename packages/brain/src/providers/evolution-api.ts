@@ -1,5 +1,5 @@
 import { db } from "@flow-os/db";
-import { ensureInstanceOpen } from "../evolution/instance-state.js";
+import { ensureInstanceOpen } from "../evolution/instance-state";
 
 async function resolveAuditAgentId(workspaceId: string): Promise<string | null> {
   const agent = await db.agent.findFirst({
