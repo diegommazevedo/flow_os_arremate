@@ -92,22 +92,44 @@ export class EvolutionApiProvider {
     mediaType: "image" | "document" | "audio" | "video",
     caption: string,
     workspaceId: string,
+    fileName?: string,
   ): Promise<void> {
     await ensureInstanceOpen(instance, { baseUrl: this.baseUrl, apiKey: this.apiKey });
 
+    // Evolution v2 exige mimetype; derivamos da URL ou tipo
+    const mimeMap: Record<string, string> = {
+      image: "image/png",
+      video: "video/mp4",
+      audio: "audio/ogg",
+      document: "application/pdf",
+    };
+    const mimetype = mimeMap[mediaType] ?? "application/octet-stream";
+
+    // Áudio usa endpoint dedicado (sendWhatsAppAudio)
+    const isAudio = mediaType === "audio";
+    const endpoint = isAudio
+      ? `${this.baseUrl}/message/sendWhatsAppAudio/${instance}`
+      : `${this.baseUrl}/message/sendMedia/${instance}`;
+
+    const payload = isAudio
+      ? { number: phone, audio: mediaUrl }
+      : {
+          number: phone,
+          mediatype: mediaType,
+          mimetype,
+          media: mediaUrl,
+          caption,
+          ...(fileName ? { fileName } : {}),
+        };
+
     const startedAt = Date.now();
-    const res = await fetch(`${this.baseUrl}/message/sendMedia/${instance}`, {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: this.apiKey,
       },
-      body: JSON.stringify({
-        number: phone,
-        mediatype: mediaType,
-        media: mediaUrl,
-        caption,
-      }),
+      body: JSON.stringify(payload),
     });
 
     await writeAuditLog({

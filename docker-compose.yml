@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U flowos -d flowos_prod"]
       interval: 10s
@@ -21,13 +21,13 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-flowos-redis-2026}
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-flowos-redis-2026}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -105,7 +105,7 @@ services:
       - DATABASE_CONNECTION_URI=postgresql://flowos:${POSTGRES_PASSWORD:-flowos_dev}@host.docker.internal:5433/flowos_prod?schema=evolution_public
       - DATABASE_CONNECTION_CLIENT_NAME=flow_os
       - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://host.docker.internal:6379/6
+      - CACHE_REDIS_URI=redis://:${REDIS_PASSWORD:-flowos-redis-2026}@host.docker.internal:6379/6
       - CACHE_REDIS_PREFIX_KEY=evolution
       - CACHE_REDIS_SAVE_INSTANCES=false
       - CACHE_LOCAL_ENABLED=false
@@ -113,8 +113,8 @@ services:
       - LOG_COLOR=true
       - LOG_BAILEYS=debug
       - CONFIG_SESSION_PHONE_VERSION=
-      - WEBHOOK_GLOBAL_ENABLED=false
-      - WEBHOOK_GLOBAL_URL=https://gnarlier-anh-copyrightable.ngrok-free.dev/api/webhooks/evolution
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_GLOBAL_URL=http://host.docker.internal:3030/api/webhooks/evolution
       - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
       - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
       - WEBHOOK_EVENTS_CONNECTION_UPDATE=true

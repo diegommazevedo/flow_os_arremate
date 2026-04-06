@@ -171,6 +171,7 @@ export async function POST(request: NextRequest) {
             media.type,
             captionForMedia,
             workspaceId,
+            media.fileName,
           );
         } else {
           await evolutionApi.sendText(instanceName, phone, textTrimmed, workspaceId);

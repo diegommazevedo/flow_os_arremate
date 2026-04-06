@@ -265,10 +265,16 @@ async function resolveOrCreateContact(
 
   const existing = await db.contact.findFirst({
     where: { workspaceId, phone: { in: [digits, `+${digits}`, phone] } },
-    select: { id: true },
+    select: { id: true, name: true },
   });
 
-  if (existing) return existing.id;
+  if (existing) {
+    // Atualiza nome se mudou (pushName pode variar no WhatsApp)
+    if (safeName && safeName !== existing.name && safeName !== "WhatsApp") {
+      await db.contact.update({ where: { id: existing.id }, data: { name: safeName } }).catch(() => {});
+    }
+    return existing.id;
+  }
 
   const created = await db.contact.create({
     data: {
@@ -342,6 +348,38 @@ async function upsertTask(params: {
   slaDeadline: Date;
   channel: "WA_EVOLUTION" | "WA_GROUP";
 }): Promise<string> {
+  // 1. Busca task aberta do mesmo deal+channel (conversa existente)
+  if (params.dealId) {
+    const byDeal = await db.task.findFirst({
+      where: {
+        workspaceId: params.workspaceId,
+        dealId: params.dealId,
+        channel: params.channel,
+        completedAt: null,
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    if (byDeal) {
+      // Atualiza última mensagem na task existente
+      await db.task.update({
+        where: { id: byDeal.id },
+        data: {
+          updatedAt: new Date(),
+          description: JSON.stringify({
+            channel: params.channel,
+            phone: params.phone,
+            name: params.name,
+            messageId: params.messageId,
+            rawText: params.cleanText.slice(0, 500),
+          }),
+        },
+      });
+      return byDeal.id;
+    }
+  }
+
+  // 2. Fallback: busca por messageId (dedup exata)
   const existing = await db.task.findFirst({
     where: {
       workspaceId: params.workspaceId,

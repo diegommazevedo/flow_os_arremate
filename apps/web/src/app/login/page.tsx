@@ -9,6 +9,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { getSessionWorkspaceId } from "@/lib/session";
 import LoginClient from "./_components/LoginClient";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,12 @@ export default async function LoginPage({
 
   // Dev bypass: Supabase não configurado + DEFAULT_WORKSPACE_ID definido → acesso direto
   if (!supabaseUrl && devWs && process.env["NODE_ENV"] === "development") {
+    redirect(next);
+  }
+
+  // Já autenticado → redireciona para destino (evita loop login↔dashboard)
+  const existingSession = await getSessionWorkspaceId();
+  if (existingSession) {
     redirect(next);
   }
 

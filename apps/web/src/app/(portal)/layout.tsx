@@ -1,4 +1,5 @@
 import Link               from "next/link";
+import { redirect }       from "next/navigation";
 import { Suspense }       from "react";
 import { unstable_cache } from "next/cache";
 import { type ReactNode } from "react";
@@ -107,6 +108,7 @@ function NavLinks({ badges = {} }: { badges?: Partial<Record<NavHref, React.Reac
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const workspaceId = await getSessionWorkspaceId();
+  if (!workspaceId) redirect("/login");
 
   return (
     <div className="flex h-screen overflow-hidden">
