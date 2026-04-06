@@ -137,8 +137,9 @@ function cleanContactName(rawName: string, phone: string): string {
 /** Preview unificado: rawText > mídia placeholder > título da task. */
 function cleanLastMessage(meta: Record<string, unknown>, taskTitle: string | null): string {
   const raw = String(meta["rawText"] ?? "").trim();
+  // Normaliza placeholders legados para formato único
+  if (/^\[(?:image|video|audio|mídia|media|file|document|sticker)\]$/i.test(raw)) return "📎 [mídia]";
   if (raw) return raw;
-  // Qualquer tipo de mídia → placeholder único
   if (meta["mediaKind"] || meta["media"]) return "📎 [mídia]";
   return taskTitle ?? "";
 }
