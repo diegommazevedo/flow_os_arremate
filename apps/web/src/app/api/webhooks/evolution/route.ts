@@ -31,6 +31,8 @@ interface EvolutionWebhookPayload {
     };
     message?: Record<string, unknown>;
     pushName?: string;
+    /** Evolution v2 envia o nome do grupo aqui em mensagens de grupo */
+    groupSubject?: string;
   };
 }
 
@@ -529,6 +531,10 @@ export async function POST(req: NextRequest) {
     const groupId = remoteJid;
     const participantJid = typeof payload.data.key?.participant === "string" ? payload.data.key.participant : "";
     const senderName = safeName || participantJid.replace("@s.whatsapp.net", "");
+    // Nome do grupo: groupSubject do payload (Evolution v2) > pushName NÃO é o nome do grupo
+    const groupSubject = typeof payload.data.groupSubject === "string" && payload.data.groupSubject.trim()
+      ? defaultSanitizer.clean(payload.data.groupSubject)
+      : "";
     const msgTimestamp =
       typeof payload.data.messageTimestamp === "number" ? payload.data.messageTimestamp : Date.now();
 
@@ -558,12 +564,12 @@ export async function POST(req: NextRequest) {
       groupTask = await db.task.create({
         data: {
           workspaceId,
-          title: `Grupo: ${senderName || shortGroupId}`,
+          title: `Grupo: ${groupSubject || senderName || shortGroupId}`,
           groupId,
           channel: "WA_GROUP",
           description: mergeGroupTaskDescription(null, {
             groupId,
-            groupName: senderName,
+            groupName: groupSubject || senderName,
             instanceName: instance,
             channel: "WA_GROUP",
             name: senderName,
@@ -580,15 +586,16 @@ export async function POST(req: NextRequest) {
       });
       createdNew = true;
     } else {
-      // Normaliza groupId para formato completo e atualiza última mensagem
+      // Normaliza groupId para formato completo e atualiza última mensagem + nome do grupo
       await db.task.update({
         where: { id: groupTask.id, workspaceId },
         data: {
+          ...(groupSubject ? { title: `Grupo: ${groupSubject}` } : {}),
           groupId,
           channel: "WA_GROUP",
           description: mergeGroupTaskDescription(groupTask.description, {
             groupId,
-            groupName: senderName,
+            groupName: groupSubject || senderName,
             instanceName: instance,
             channel: "WA_GROUP",
             name: senderName,

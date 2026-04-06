@@ -77,6 +77,35 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[i]!;
 }
 
+/** Normaliza labels de mídia legados para formato amigável */
+const MEDIA_LABEL_RE = /^\[(?:AUDIO|IMAGE|VIDEO|DOCUMENT|STICKER|audio|image|video|document|sticker|mídia|media|file)\]$/i;
+const MEDIA_LABEL_MAP: Record<string, string> = {
+  audio: "🎵 Áudio", image: "🖼️ Imagem", video: "🎬 Vídeo",
+  document: "📎 Documento", sticker: "🎭 Sticker", file: "📎 Arquivo",
+  mídia: "📎 Mídia", media: "📎 Mídia",
+};
+function normalizeMediaLabel(text: string): string {
+  const t = text.trim();
+  if (!MEDIA_LABEL_RE.test(t)) return t;
+  const key = t.slice(1, -1).toLowerCase();
+  return MEDIA_LABEL_MAP[key] ?? t;
+}
+
+/** Parse WhatsApp markdown: *bold* _italic_ ~strike~ ```code``` */
+function parseWAMarkdown(text: string): string {
+  // Escapa HTML primeiro (SEC-08)
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped
+    .replace(/\*(.+?)\*/g, "<strong>$1</strong>")
+    .replace(/_(.+?)_/g, "<em>$1</em>")
+    .replace(/~(.+?)~/g, "<s>$1</s>")
+    .replace(/```(.+?)```/gs, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+}
+
 /** Padrão de fundo sutil (painel de mensagens) */
 const WA_CHAT_BG =
   'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2748%27 height=%2748%27%3E%3Crect fill=%27%230B141A%27 width=%2748%27 height=%2748%27/%3E%3Ccircle cx=%276%27 cy=%278%27 r=%270.65%27 fill=%27%231a242b%27/%3E%3Ccircle cx=%2724%27 cy=%2718%27 r=%270.5%27 fill=%27%231f2c34%27/%3E%3Ccircle cx=%2738%27 cy=%2710%27 r=%270.55%27 fill=%27%231a242b%27/%3E%3Ccircle cx=%2714%27 cy=%2730%27 r=%270.5%27 fill=%27%231f2c34%27/%3E%3Ccircle cx=%2734%27 cy=%2734%27 r=%270.65%27 fill=%27%231a242b%27/%3E%3C/svg%3E")';
@@ -154,9 +183,22 @@ function TypingDots({ className }: { className?: string }) {
 
 // ─── Conversation row ─────────────────────────────────────────────────────────
 
+/** Detecta nomes duplicados na lista para mostrar sufixo de telefone */
+function useDuplicateNames(conversations: Conversation[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const c of conversations) {
+    counts.set(c.contactName, (counts.get(c.contactName) ?? 0) + 1);
+  }
+  const dupes = new Set<string>();
+  for (const [name, count] of counts) {
+    if (count > 1) dupes.add(name);
+  }
+  return dupes;
+}
+
 function ConvRow({
-  conv, active, onClick,
-}: { conv: Conversation; active: boolean; onClick: () => void }) {
+  conv, active, onClick, isDuplicate,
+}: { conv: Conversation; active: boolean; onClick: () => void; isDuplicate?: boolean }) {
   const aparelho = conv.aparelhoOrigem
     ? conv.aparelhoOrigem.length > 8
       ? conv.aparelhoOrigem.slice(0, 8)
@@ -208,6 +250,11 @@ function ConvRow({
                 style={{ color: conv.unreadCount > 0 ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'var(--font-display)' }}
               >
                 {conv.contactName}
+                {isDuplicate && conv.contactPhone && (
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-tertiary)', marginLeft: '3px' }}>
+                    ·{maskPhone(conv.contactPhone)}
+                  </span>
+                )}
               </span>
               {aparelho && (
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '8px', background: 'var(--surface-overlay)', color: 'var(--text-tertiary)', padding: '1px 4px', borderRadius: 'var(--radius-sm)' }} className="shrink-0">{aparelho}</span>
@@ -335,7 +382,12 @@ function Bubble({ msg }: { msg: ChatMessage }) {
             📎 {m.fileName ?? "Documento"}
           </a>
         )}
-        {msg.text ? <p className="whitespace-pre-wrap break-words leading-snug">{msg.text}</p> : null}
+        {msg.text ? (
+          <p
+            className="whitespace-pre-wrap break-words leading-snug [&_strong]:font-semibold [&_em]:italic [&_s]:line-through [&_code]:bg-black/20 [&_code]:px-1 [&_code]:rounded [&_code]:font-mono [&_code]:text-[12px]"
+            dangerouslySetInnerHTML={{ __html: parseWAMarkdown(normalizeMediaLabel(msg.text)) }}
+          />
+        ) : null}
         <div
           className="mt-1 flex flex-wrap items-end justify-end gap-x-1 gap-y-0 leading-none"
           style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}
@@ -1176,6 +1228,7 @@ export function ChatClient({ initial, workspaceId }: Props) {
   }, []);
 
   const filtered = applyFilters(conversations, filters);
+  const duplicateNames = useDuplicateNames(filtered);
 
   return (
     <>
@@ -1281,6 +1334,7 @@ export function ChatClient({ initial, workspaceId }: Props) {
                       key={conv.id}
                       conv={conv}
                       active={conv.id === activeId}
+                      isDuplicate={duplicateNames.has(conv.contactName)}
                       onClick={() => {
                         setActiveId(conv.id);
                         setConversations(prev =>
