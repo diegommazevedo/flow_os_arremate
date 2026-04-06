@@ -5,7 +5,7 @@
  * Split-view: lista de conversas (esq) + janela de chat (centro) + sidebar (dir)
  */
 
-import { useState, useEffect, useRef, useCallback, useTransition } from "react";
+import { useState, useEffect, useRef, useCallback, useTransition, type ChangeEvent } from "react";
 import type { Conversation, ChatMessage, ChannelType, ChatMediaAttachment } from "../_lib/chat-queries";
 import { maskPhone } from "../_lib/chat-queries";
 import { ChatSidebar } from "./ChatSidebar";
@@ -264,6 +264,14 @@ function mediaKindFromClientType(t: string): ChatMediaAttachment["kind"] {
   return m[t] ?? "DOCUMENT";
 }
 
+function mediaTypeFromMime(mime: string): "image" | "audio" | "video" | "document" {
+  const m = mime.toLowerCase();
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("video/")) return "video";
+  if (m.startsWith("audio/")) return "audio";
+  return "document";
+}
+
 function Bubble({ msg }: { msg: ChatMessage }) {
   const isOut = msg.direction === "OUT";
   const m = msg.media;
@@ -519,8 +527,11 @@ function ChatWindow({
   const [text,      setText]     = useState("");
   const [mediaUrl,  setMediaUrl]  = useState("");
   const [mediaType, setMediaType] = useState<"image" | "audio" | "video" | "document">("image");
+  const [mediaFileName, setMediaFileName] = useState<string | null>(null);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [sending,   setSending]  = useState(false);
   const [error,     setError]    = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [useEmbed,  setUseEmbed] = useState(conv.channel === "RC" && !!conv.roomId);
   const [showQR,    setShowQR]   = useState(false);
   const [showProtocol, setShowProtocol] = useState(false);
@@ -541,10 +552,39 @@ function ChatWindow({
     setShowQR(text.startsWith("/") && text.length >= 1);
   }, [text]);
 
+  const clearMedia = () => {
+    setMediaUrl("");
+    setMediaFileName(null);
+  };
+
+  const onMediaFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setMediaUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch("/api/media/upload", { method: "POST", body: fd });
+      const d = (await r.json()) as { url?: string; error?: string };
+      if (!r.ok) throw new Error(d.error ?? "Falha no upload");
+      if (!d.url) throw new Error("Resposta sem URL");
+      setMediaUrl(d.url);
+      setMediaType(mediaTypeFromMime(file.type || "application/octet-stream"));
+      setMediaFileName(file.name || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro no upload");
+      clearMedia();
+    } finally {
+      setMediaUploading(false);
+    }
+  };
+
   const send = async () => {
     const wa = conv.channel !== "RC";
     const hasMedia = wa && mediaUrl.trim().length > 0;
-    if ((!text.trim() && !hasMedia) || sending) return;
+    if ((!text.trim() && !hasMedia) || sending || mediaUploading) return;
     setSending(true);
     setError(null);
     try {
@@ -561,6 +601,7 @@ function ChatWindow({
           type: mediaType,
           url:  mediaUrl.trim(),
           ...(text.trim() ? { caption: text.trim() } : {}),
+          ...(mediaFileName && mediaType === "document" ? { fileName: mediaFileName } : {}),
         };
       }
       const r = await fetch("/api/chat/send", {
@@ -585,11 +626,12 @@ function ChatWindow({
         optimistic.media = {
           kind: mediaKindFromClientType(mediaType),
           url:  mediaUrl.trim(),
+          ...(mediaFileName ? { fileName: mediaFileName } : {}),
         };
       }
       onMessageSent(optimistic);
       setText("");
-      setMediaUrl("");
+      clearMedia();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro desconhecido");
     } finally {
@@ -677,25 +719,49 @@ function ChatWindow({
             {error && <p className="text-xs mb-2 px-1" style={{ color: 'var(--color-q1)' }}>{error}</p>}
             {conv.channel !== "RC" && (
               <div className="flex flex-wrap items-center gap-2 mb-2" style={{ fontSize: '11px', fontFamily: 'var(--font-display)' }}>
-                <span style={{ color: 'var(--text-tertiary)' }} className="shrink-0">Mídia (URL pública)</span>
-                <select
-                  value={mediaType}
-                  onChange={e => setMediaType(e.target.value as typeof mediaType)}
-                  className="rounded px-2 py-1"
-                  style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontFamily: 'var(--font-display)', fontSize: '11px' }}
-                >
-                  <option value="image">imagem</option>
-                  <option value="audio">áudio</option>
-                  <option value="video">vídeo</option>
-                  <option value="document">documento</option>
-                </select>
                 <input
-                  value={mediaUrl}
-                  onChange={e => setMediaUrl(e.target.value)}
-                  placeholder="https://…"
-                  className="flex-1 min-w-[120px] rounded px-2 py-1 focus:outline-none"
-                  style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontFamily: 'var(--font-display)', fontSize: '11px' }}
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*,audio/*,.pdf,application/pdf"
+                  className="hidden"
+                  onChange={e => { void onMediaFileChange(e); }}
                 />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || mediaUploading}
+                  title="Anexar imagem, vídeo, áudio ou PDF"
+                  className="shrink-0 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:[background:var(--surface-hover)]"
+                  style={{
+                    width:      '36px',
+                    height:     '36px',
+                    border:     '1px solid var(--border-subtle)',
+                    background: 'var(--surface-overlay)',
+                    fontSize:   '16px',
+                  }}
+                  aria-label="Anexar arquivo"
+                >
+                  {mediaUploading ? "…" : "📎"}
+                </button>
+                {mediaUrl ? (
+                  <div className="flex flex-1 min-w-0 items-center gap-2">
+                    <span className="truncate" style={{ color: 'var(--text-secondary)' }} title={mediaFileName ?? mediaUrl}>
+                      {mediaFileName ?? "Mídia anexada"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearMedia}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px]"
+                      style={{ color: 'var(--color-q1)', border: '1px solid var(--border-subtle)' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <span style={{ color: 'var(--text-tertiary)' }} className="text-[10px]">
+                    Imagem, vídeo, áudio ou PDF (até 25 MB)
+                  </span>
+                )}
               </div>
             )}
             <div className="relative flex gap-2 items-end">
@@ -742,7 +808,11 @@ function ChatWindow({
               <button
                 type="button"
                 onClick={() => { void send(); }}
-                disabled={(!text.trim() && !(conv.channel !== "RC" && mediaUrl.trim())) || sending}
+                disabled={
+                  (!text.trim() && !(conv.channel !== "RC" && mediaUrl.trim())) ||
+                  sending ||
+                  mediaUploading
+                }
                 title="Enviar"
                 className="shrink-0 flex items-center justify-center rounded transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                 style={{
@@ -995,6 +1065,7 @@ export function ChatClient({ initial, workspaceId }: Props) {
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
   const [filters,       setFilters]       = useState<Filters>(DEFAULT_FILTERS);
   const [showNewConv,   setShowNewConv]   = useState(false);
+  const [tagsFiltersExpanded, setTagsFiltersExpanded] = useState(false);
   const [,              startTransition]  = useTransition();
 
   const activeConv = conversations.find(c => c.id === activeId) ?? null;
@@ -1122,6 +1193,25 @@ export function ChatClient({ initial, workspaceId }: Props) {
               </span>
             )}
             <button
+              type="button"
+              onClick={() => setTagsFiltersExpanded(v => !v)}
+              className="flex items-center rounded-lg transition-colors duration-150 hover:[background:var(--surface-hover)] shrink-0"
+              style={{
+                gap:          '4px',
+                padding:      '4px 10px',
+                fontFamily:   'var(--font-display)',
+                fontSize:     '12px',
+                fontWeight:   500,
+                color:        tagsFiltersExpanded ? 'var(--text-accent)' : 'var(--text-secondary)',
+                border:       `1px solid ${tagsFiltersExpanded ? 'var(--text-accent)' : 'var(--border-default)'}`,
+                background:   tagsFiltersExpanded ? 'var(--surface-active)' : 'transparent',
+                cursor:       'pointer',
+              }}
+              title={tagsFiltersExpanded ? "Ocultar filtros por tag" : "Mostrar filtros por tag"}
+            >
+              🏷 Filtros
+            </button>
+            <button
               onClick={() => setShowNewConv(true)}
               className="flex items-center rounded-lg transition-colors duration-150 hover:[background:var(--surface-hover)] shrink-0"
               style={{ gap: '2px', padding: '4px 10px', fontFamily: 'var(--font-display)', fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', border: '1px solid var(--border-default)', background: 'transparent', cursor: 'pointer' }}
@@ -1143,6 +1233,7 @@ export function ChatClient({ initial, workspaceId }: Props) {
           filters={filters}
           onChange={setFilters}
           totalShown={filtered.length}
+          tagsExpanded={tagsFiltersExpanded}
         />
 
         {/* Conversations — agrupadas por canal */}

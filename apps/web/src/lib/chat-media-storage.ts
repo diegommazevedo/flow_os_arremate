@@ -3,6 +3,7 @@
  * Reutiliza credenciais MINIO_* do projeto.
  */
 
+import { randomUUID } from "node:crypto";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 let s3Client: S3Client | null = null;
@@ -48,6 +49,24 @@ export function buildChatMediaPublicUrl(s3Key: string): string {
   const endpoint = (process.env["MINIO_ENDPOINT"] ?? "http://localhost:9000").replace(/\/$/, "");
   const bucket = getBucket();
   return `${endpoint}/${bucket}/${s3Key}`;
+}
+
+/** Upload genérico (ex.: POST /api/media/upload) — MinIO/S3. */
+export async function uploadToStorage(params: {
+  workspaceId: string;
+  buffer: Buffer;
+  contentType: string;
+}): Promise<{ url: string }> {
+  const messageId = `upload-${randomUUID()}`;
+  const ext = extFromMime(params.contentType);
+  const { url } = await uploadChatMediaBuffer({
+    workspaceId: params.workspaceId,
+    messageId,
+    ext,
+    contentType: params.contentType,
+    buffer: params.buffer,
+  });
+  return { url };
 }
 
 export async function uploadChatMediaBuffer(params: {

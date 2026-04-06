@@ -87,18 +87,20 @@ const SORT_OPTIONS = [
 ];
 
 interface Props {
-  filters:    Filters;
-  onChange:   (f: Filters) => void;
-  totalShown: number;
+  filters:       Filters;
+  onChange:      (f: Filters) => void;
+  totalShown:    number;
+  /** Bloco de tags coloridas (pills) — controlado pelo header da lista. */
+  tagsExpanded: boolean;
 }
 
-export function ChatFilters({ filters, onChange, totalShown }: Props) {
+export function ChatFilters({ filters, onChange, totalShown, tagsExpanded }: Props) {
   const [open,    setOpen]    = useState(false);
   const [tags,    setTags]    = useState<Tag[]>([]);
   const [depts,   setDepts]   = useState<Department[]>([]);
   const [integrs, setIntegrs] = useState<Integration[]>([]);
 
-  // Tags carregam ao montar — sempre visíveis
+  // Tags carregam ao montar (dados prontos quando o usuário abre 🏷 Filtros)
   useEffect(() => {
     void fetch("/api/tags")
       .then(r => r.ok ? r.json() : { tags: [] })
@@ -160,8 +162,8 @@ export function ChatFilters({ filters, onChange, totalShown }: Props) {
         </button>
       </div>
 
-      {/* Tags always visible (colored pills) */}
-      {tags.length > 0 && (
+      {/* Tags coloridas — visíveis só quando o header ativa 🏷 Filtros */}
+      {tagsExpanded && tags.length > 0 && (
         <div className="flex flex-wrap gap-1 px-3 pb-2">
           {tags.map(tag => {
             const active = filters.tagIds.includes(tag.id);
