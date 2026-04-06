@@ -3,7 +3,7 @@
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
-const THEME_ORDER = ["dark", "operational", "chromatic"] as const;
+const THEME_ORDER = ["dark", "operational", "chromatic", "vivid"] as const;
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -24,13 +24,15 @@ export function ThemeToggle() {
   };
 
   const icon =
-    current === "chromatic" ? "🎨" : current === "operational" ? "☀" : "☾";
+    current === "vivid" ? "◈" : current === "chromatic" ? "🎨" : current === "operational" ? "☀" : "☾";
   const title =
-    current === "chromatic"
-      ? "Tema Chromatic — próximo: escuro"
-      : current === "operational"
-        ? "Tema operacional — próximo: Chromatic"
-        : "Tema escuro — próximo: operacional";
+    current === "vivid"
+      ? "Tema Vivid — próximo: escuro"
+      : current === "chromatic"
+        ? "Tema Chromatic — próximo: Vivid"
+        : current === "operational"
+          ? "Tema operacional — próximo: Chromatic"
+          : "Tema escuro — próximo: operacional";
 
   return (
     <button

@@ -91,6 +91,37 @@
     --border-strong:   rgba(255, 107, 107, 0.24);
   }
 
+  /* Tema Vivid — policromático, 4 cores harmonizadas WCAG AA */
+  html.vivid {
+    --surface-base:    #0D0D14;
+    --surface-raised:  #13131F;
+    --surface-overlay: #1C1C2E;
+    --surface-hover:   #22223A;
+    --surface-active:  #2A2A46;
+
+    --border-subtle:  rgba(124, 106, 247, 0.10);
+    --border-default: rgba(124, 106, 247, 0.18);
+    --border-strong:  rgba(124, 106, 247, 0.30);
+
+    --text-primary:   #F2F2FA;
+    --text-secondary: #9B97CC;
+    --text-tertiary:  #5C5899;
+    --text-accent:    #A78BFA;
+
+    --color-q1:      #E05A7A;
+    --color-q2:      #7C6AF7;
+    --color-q3:      #D97706;
+    --color-success: #1D9E75;
+    --color-whatsapp:#1D9E75;
+
+    --font-display: 'DM Sans', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+  }
+
   body {
     background-color: var(--surface-base);
     color: var(--text-primary);
