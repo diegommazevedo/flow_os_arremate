@@ -154,22 +154,12 @@ function cleanLastMessage(meta: Record<string, unknown>, taskTitle: string | nul
 const CHAT_TASK_CHANNELS = ["WA", "RC", "WA_EVOLUTION", "WA_GROUP", "PWA"] as const satisfies readonly ChannelType[];
 
 export async function getConversations(workspaceId: string): Promise<Conversation[]> {
+  // Usa campo indexado Task.channel em vez de LIKE no description (elimina seq scan)
   const tasks = await db.task.findMany({
     where: {
       workspaceId,
       completedAt: null,
-      OR: [
-        { description: { contains: '"channel":"WA"' } },
-        { description: { contains: '"channel":"RC"' } },
-        { description: { contains: '"channel":"WA_EVOLUTION"' } },
-        { description: { contains: '"channel":"WA_GROUP"' } },
-        { description: { contains: '"channel":"PWA"' } },
-        { description: { contains: '"channel": "WA"' } },
-        { description: { contains: '"channel": "RC"' } },
-        { description: { contains: '"channel": "WA_EVOLUTION"' } },
-        { description: { contains: '"channel": "WA_GROUP"' } },
-        { channel: { in: [...CHAT_TASK_CHANNELS] } },
-      ],
+      channel: { in: [...CHAT_TASK_CHANNELS] },
     },
     orderBy: { updatedAt: "desc" },
     take:    200,

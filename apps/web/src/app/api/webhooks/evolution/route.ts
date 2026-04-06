@@ -192,8 +192,18 @@ async function isAlreadyProcessed(workspaceId: string, messageId: string): Promi
   return Boolean(existing);
 }
 
+// Cache em memória — evita seq scan em workspace_integrations a cada webhook
+const integrationCache = new Map<string, {
+  data: { workspaceId: string; config: unknown } | null;
+  expiresAt: number;
+}>();
+const INTEGRATION_CACHE_TTL = 60_000; // 1 minuto
+
 async function resolveIntegration(instance: string) {
-  return db.workspaceIntegration.findFirst({
+  const cached = integrationCache.get(instance);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const result = await db.workspaceIntegration.findFirst({
     where: {
       type: "WHATSAPP_EVOLUTION",
       status: "ACTIVE",
@@ -204,6 +214,9 @@ async function resolveIntegration(instance: string) {
     },
     select: { workspaceId: true, config: true },
   });
+
+  integrationCache.set(instance, { data: result, expiresAt: Date.now() + INTEGRATION_CACHE_TTL });
+  return result;
 }
 
 async function alertPriorityChannel(

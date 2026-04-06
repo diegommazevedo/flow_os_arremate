@@ -184,6 +184,7 @@ model Contact {
   deals       Deal[]
 
   @@index([workspaceId])
+  @@index([workspaceId, phone])  // resolveOrCreateContact dedup
   @@map("contacts")
 }
 
@@ -227,6 +228,8 @@ model Task {
   @@index([workspaceId, quadrant])
   @@index([workspaceId, channel])
   @@index([workspaceId, groupId])
+  @@index([workspaceId, completedAt])  // getConversations: tasks abertas
+  @@index([workspaceId, dealId, channel, completedAt]) // upsertTask dedup
   @@map("tasks")
 }
 
@@ -772,6 +775,7 @@ model WorkspaceIntegration {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
+  @@index([type, status])  // resolveIntegration lookup
   @@map("workspace_integrations")
 }
 
