@@ -487,8 +487,10 @@ export async function POST(req: NextRequest) {
     : {};
 
   if (isGroup) {
-    const groupId = remoteJid.replace("@g.us", "");
+    // groupId = remoteJid completo (ex: 120363xxx@g.us) — chave de dedup estável
+    const groupId = remoteJid;
     const participantJid = typeof payload.data.key?.participant === "string" ? payload.data.key.participant : "";
+    const senderName = safeName || participantJid.replace("@s.whatsapp.net", "");
     const msgTimestamp =
       typeof payload.data.messageTimestamp === "number" ? payload.data.messageTimestamp : Date.now();
 
@@ -497,14 +499,19 @@ export async function POST(req: NextRequest) {
     const urgent = decision.quadrant === "Q1_DO" || decision.quadrant === "Q3_DELEGATE";
     const important = decision.quadrant === "Q1_DO" || decision.quadrant === "Q2_PLAN";
 
+    // Busca task existente pelo campo dedicado groupId, fallback por JSON legado
+    const shortGroupId = remoteJid.replace("@g.us", "");
     let groupTask =
       (await db.task.findFirst({
         where: { workspaceId, groupId },
       })) ??
       (await db.task.findFirst({
+        where: { workspaceId, groupId: shortGroupId },
+      })) ??
+      (await db.task.findFirst({
         where: {
           workspaceId,
-          description: { contains: `"groupId":"${groupId}"` },
+          description: { contains: `"groupId":"${shortGroupId}"` },
         },
       }));
 
@@ -513,16 +520,16 @@ export async function POST(req: NextRequest) {
       groupTask = await db.task.create({
         data: {
           workspaceId,
-          title: safeName || groupId,
+          title: `Grupo: ${senderName || shortGroupId}`,
           groupId,
           channel: "WA_GROUP",
           description: mergeGroupTaskDescription(null, {
             groupId,
-            groupName: safeName,
+            groupName: senderName,
             instanceName: instance,
             channel: "WA_GROUP",
-            name: safeName || groupId,
-            phone: groupId,
+            name: senderName,
+            phone: shortGroupId,
             rawText: cleanText.slice(0, 500),
           }),
           type: "WhatsApp",
@@ -535,6 +542,7 @@ export async function POST(req: NextRequest) {
       });
       createdNew = true;
     } else {
+      // Normaliza groupId para formato completo e atualiza última mensagem
       await db.task.update({
         where: { id: groupTask.id, workspaceId },
         data: {
@@ -542,16 +550,34 @@ export async function POST(req: NextRequest) {
           channel: "WA_GROUP",
           description: mergeGroupTaskDescription(groupTask.description, {
             groupId,
-            groupName: safeName,
+            groupName: senderName,
             instanceName: instance,
             channel: "WA_GROUP",
-            name: safeName || groupId,
-            phone: groupId,
+            name: senderName,
+            phone: shortGroupId,
             rawText: cleanText.slice(0, 500),
           }),
         },
       });
     }
+
+    // ChatSession: uma por grupo (vinculada à task do grupo)
+    await db.chatSession.upsert({
+      where: { taskId: groupTask.id },
+      create: {
+        workspaceId,
+        taskId: groupTask.id,
+        status: "ABERTO",
+        aparelhoOrigem: instance,
+        unreadCount: 1,
+        totalAtendimentos: 1,
+      },
+      update: {
+        status: "ABERTO",
+        aparelhoOrigem: instance,
+        unreadCount: { increment: 1 },
+      },
+    });
 
     after(() => {
       void appendAuditLog({
@@ -562,8 +588,8 @@ export async function POST(req: NextRequest) {
           instance,
           from: groupId,
           participantJid,
+          senderName,
           isGroup: true,
-          name: safeName,
           rawText: cleanText.slice(0, 300),
           channel: "WA_GROUP",
           hasInjection: sanitized.blocked.length > 0,
@@ -574,7 +600,7 @@ export async function POST(req: NextRequest) {
           text: displayForAudit.slice(0, 300),
           ...mediaBlock,
           groupMessageMeta: {
-            from: safeName || participantJid,
+            from: senderName,
             messageId,
             timestamp: msgTimestamp,
           },

@@ -10,6 +10,9 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [{ source: "/favicon.ico", destination: "/icons/icon.svg", permanent: false }];
+  },
   // @flow-os/brain usa Playwright — NÃO pode ser transpilado pelo Webpack.
   // Os outros pacotes precisam de transpile para funcionar no App Router.
   transpilePackages: [

@@ -10,15 +10,23 @@ interface Props {
 
 type Mode = "magic" | "password";
 
+function safeDecodeURIComponent(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 export default function LoginClient({ next, hasSupabase, callbackError }: Props) {
-  const [mode,    setMode]    = useState<Mode>("magic");
-  const [email,   setEmail]   = useState("");
-  const [pass,    setPass]    = useState("");
-  const [status,  setStatus]  = useState<"idle" | "loading" | "sent" | "error">(
+  const [mode, setMode] = useState<Mode>("magic");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">(
     callbackError ? "error" : "idle",
   );
   const [message, setMessage] = useState(
-    callbackError ? `Erro ao autenticar: ${decodeURIComponent(callbackError)}` : "",
+    callbackError ? `Erro ao autenticar: ${safeDecodeURIComponent(callbackError)}` : "",
   );
 
   async function handleMagicLink(e: FormEvent) {

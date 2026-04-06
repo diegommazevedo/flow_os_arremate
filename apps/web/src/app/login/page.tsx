@@ -8,34 +8,51 @@
  *   → formulário Supabase (magic link ou email + senha).
  */
 
+import { redirect } from "next/navigation";
+import LoginClient from "./_components/LoginClient";
+
 export const dynamic = "force-dynamic";
 
-import { redirect } from "next/navigation";
-import LoginClient  from "./_components/LoginClient";
+/** Next.js pode entregar o mesmo nome de query mais de uma vez → string | string[]. */
+function firstParam(v: string | string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+/** Evita open redirect: só caminhos relativos ao site. */
+function safeInternalPath(v: string | undefined, fallback: string): string {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s.startsWith("/") || s.startsWith("//")) return fallback;
+  return s;
+}
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string | string[]; error?: string | string[] }>;
 }) {
+  const sp = await searchParams;
+  const nextRaw = firstParam(sp.next);
+  const errorRaw = firstParam(sp.error);
+
   const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? "";
-  const devWs       = process.env["DEFAULT_WORKSPACE_ID"] ?? "";
+  const devWs = process.env["DEFAULT_WORKSPACE_ID"] ?? "";
+
+  const next = safeInternalPath(nextRaw, "/dashboard");
 
   // Dev bypass: Supabase não configurado + DEFAULT_WORKSPACE_ID definido → acesso direto
   if (!supabaseUrl && devWs && process.env["NODE_ENV"] === "development") {
-    const { next } = await searchParams;
-    redirect(next ?? "/dashboard");
+    redirect(next);
   }
 
-  const { next, error } = await searchParams;
-  const hasSupabase     = !!supabaseUrl;
+  const hasSupabase = !!supabaseUrl;
 
   // hasSupabase resolvido no servidor evita hydration mismatch no cliente
   return (
     <LoginClient
-      next={next ?? "/dashboard"}
+      next={next}
       hasSupabase={hasSupabase}
-      {...(error ? { callbackError: error } : {})}
+      {...(errorRaw ? { callbackError: errorRaw } : {})}
     />
   );
 }
