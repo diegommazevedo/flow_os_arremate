@@ -25,7 +25,7 @@ RUN ./packages/db/node_modules/.bin/prisma generate --schema=./packages/db/prism
 
 WORKDIR /app/apps/web
 
-RUN pnpm build
+RUN cp -r /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma /app/apps/web/.next/standalone/.prisma
 
 EXPOSE 3000
 
