@@ -16,6 +16,8 @@ export async function middleware(request: NextRequest) {
   const requestId = crypto.randomUUID();
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-flowos-request-id", requestId);
+  // Permite ao (portal)/layout redirecionar para /login preservando o destino (evita login → /dashboard default).
+  requestHeaders.set("x-flowos-pathname", request.nextUrl.pathname);
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("x-flowos-request-id", requestId);

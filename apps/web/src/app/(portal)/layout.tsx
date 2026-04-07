@@ -3,6 +3,7 @@ import { redirect }       from "next/navigation";
 import { Suspense }       from "react";
 import { unstable_cache } from "next/cache";
 import { type ReactNode } from "react";
+import { headers }        from "next/headers";
 import { db }             from "@flow-os/db";
 import { getSessionWorkspaceId } from "@/lib/session";
 import { ThemeToggle }    from "@/components/theme-toggle";
@@ -108,7 +109,14 @@ function NavLinks({ badges = {} }: { badges?: Partial<Record<NavHref, React.Reac
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const workspaceId = await getSessionWorkspaceId();
-  if (!workspaceId) redirect("/login");
+  if (!workspaceId) {
+    const pathname =
+      (await headers()).get("x-flowos-pathname")?.trim() || "/dashboard";
+    const nextParam = encodeURIComponent(
+      pathname.startsWith("/") ? pathname : `/${pathname}`,
+    );
+    redirect(`/login?next=${nextParam}`);
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
