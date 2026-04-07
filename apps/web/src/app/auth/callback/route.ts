@@ -55,8 +55,9 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
+    // Detalhe só no servidor — não colocar mensagem do SDK na query (URL longa, ruído na UI, bookmarks).
     console.error("[auth/callback] exchangeCodeForSession error:", error.message);
-    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
+    return NextResponse.redirect(`${origin}/login?error=session_exchange_failed`);
   }
 
   // Sucesso — redireciona para o destino original

@@ -462,6 +462,16 @@ function auditDisplayText(
   return cleanText.slice(0, 500);
 }
 
+/** Evolution envia pushName "@lid" quando não há nome visível — evita título Task/Contact inútil. */
+function evolutionParticipantDisplayName(cleanedPushName: string, phoneKey: string): string {
+  const n = cleanedPushName.trim();
+  if (!n || /^@lid$/i.test(n) || n.toLowerCase() === "whatsapp") {
+    const d = phoneKey.replace(/\D/g, "");
+    return d.length >= 4 ? `Cliente ·${d.slice(-4)}` : "WhatsApp";
+  }
+  return n;
+}
+
 export async function POST(req: NextRequest) {
   if (req.headers.get("apikey") !== process.env["EVOLUTION_WEBHOOK_TOKEN"]) {
     return new Response(null, { status: 401 });
@@ -526,7 +536,7 @@ export async function POST(req: NextRequest) {
     mediaKind: mediaMeta?.kind ?? storedMedia?.kind ?? null,
   });
 
-  const safeName = defaultSanitizer.clean(payload.data.pushName ?? from);
+  const rawPush = defaultSanitizer.clean(payload.data.pushName ?? from);
 
   const mediaBlock = storedMedia
     ? {
@@ -540,10 +550,13 @@ export async function POST(req: NextRequest) {
     : {};
 
   if (isGroup) {
-    // groupId = remoteJid completo (ex: 120363xxx@g.us) — chave de dedup estável
-    const groupId = remoteJid;
+    const shortGroupId = remoteJid.replace("@g.us", "");
+    const groupJid = remoteJid;
     const participantJid = typeof payload.data.key?.participant === "string" ? payload.data.key.participant : "";
-    const senderName = safeName || participantJid.replace("@s.whatsapp.net", "");
+    const senderName = evolutionParticipantDisplayName(
+      defaultSanitizer.clean(payload.data.pushName ?? ""),
+      participantJid.replace("@s.whatsapp.net", "") || shortGroupId,
+    );
     // Nome do grupo: groupSubject do payload (Evolution v2) > pushName NÃO é o nome do grupo
     const groupSubject = typeof payload.data.groupSubject === "string" && payload.data.groupSubject.trim()
       ? defaultSanitizer.clean(payload.data.groupSubject)
@@ -556,12 +569,8 @@ export async function POST(req: NextRequest) {
     const urgent = decision.quadrant === "Q1_DO" || decision.quadrant === "Q3_DELEGATE";
     const important = decision.quadrant === "Q1_DO" || decision.quadrant === "Q2_PLAN";
 
-    // Busca task existente pelo campo dedicado groupId, fallback por JSON legado
-    const shortGroupId = remoteJid.replace("@g.us", "");
+    // Coluna groupId = id estável (só dígitos); JSON pode incluir groupJid completo para debug
     let groupTask =
-      (await db.task.findFirst({
-        where: { workspaceId, groupId },
-      })) ??
       (await db.task.findFirst({
         where: { workspaceId, groupId: shortGroupId },
       })) ??
@@ -569,6 +578,12 @@ export async function POST(req: NextRequest) {
         where: {
           workspaceId,
           description: { contains: `"groupId":"${shortGroupId}"` },
+        },
+      })) ??
+      (await db.task.findFirst({
+        where: {
+          workspaceId,
+          description: { contains: `"groupJid":"${groupJid}"` },
         },
       }));
 
@@ -578,10 +593,11 @@ export async function POST(req: NextRequest) {
         data: {
           workspaceId,
           title: `Grupo: ${groupSubject || senderName || shortGroupId}`,
-          groupId,
+          groupId: shortGroupId,
           channel: "WA_GROUP",
           description: mergeGroupTaskDescription(null, {
-            groupId,
+            groupId: shortGroupId,
+            groupJid,
             groupName: groupSubject || senderName,
             instanceName: instance,
             channel: "WA_GROUP",
@@ -604,10 +620,11 @@ export async function POST(req: NextRequest) {
         where: { id: groupTask.id, workspaceId },
         data: {
           ...(groupSubject ? { title: `Grupo: ${groupSubject}` } : {}),
-          groupId,
+          groupId: shortGroupId,
           channel: "WA_GROUP",
           description: mergeGroupTaskDescription(groupTask.description, {
-            groupId,
+            groupId: shortGroupId,
+            groupJid,
             groupName: groupSubject || senderName,
             instanceName: instance,
             channel: "WA_GROUP",
@@ -644,7 +661,7 @@ export async function POST(req: NextRequest) {
         input: {
           messageId,
           instance,
-          from: groupId,
+          from: groupJid,
           participantJid,
           senderName,
           isGroup: true,
@@ -686,6 +703,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   }
+
+  const safeName = evolutionParticipantDisplayName(rawPush, from);
 
   const contactId = await resolveOrCreateContact(workspaceId, from, safeName);
   const deal = await resolveOrCreateDeal(workspaceId, contactId, from);
