@@ -31,6 +31,9 @@ const HEALTH_LABELS: Record<PhaseStat["health"], string> = {
   red:   "SLA excedido",
 };
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -44,7 +47,7 @@ export function PipelineChart({ phases, totalDeals }: Props) {
 
   if (phases.length === 0) {
     return (
-      <div className="card">
+      <div className={PANEL}>
         <h2 className="font-semibold text-white mb-4">📊 Pipeline por Fase</h2>
         <p className="text-sm text-gray-500">Nenhuma fase encontrada.</p>
       </div>
@@ -52,7 +55,7 @@ export function PipelineChart({ phases, totalDeals }: Props) {
   }
 
   return (
-    <div className="card">
+    <div className={PANEL}>
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">

@@ -28,6 +28,11 @@ const PRESET_COLORS = [
   { fundo: "#14b8a6", texto: "#ffffff" },
 ];
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const PANEL_EMPTY =
+  "rounded-xl border border-gray-800 bg-gray-900/70 shadow-sm px-4 py-12 text-center text-gray-600";
+
 function TagPill({ descricao, corFundo, corTexto }: { descricao: string; corFundo: string; corTexto: string }) {
   return (
     <span
@@ -211,14 +216,14 @@ export default function TagsPage() {
       )}
 
       {loading ? <Skeleton /> : tags.length === 0 ? (
-        <div className="card text-center py-12 text-gray-600">
+        <div className={PANEL_EMPTY}>
           <p className="text-3xl mb-2">🏷️</p>
           <p className="text-sm">Nenhuma tag cadastrada ainda</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {tags.map(tag => (
-            <div key={tag.id} className="card">
+            <div key={tag.id} className={PANEL}>
               {editId === tag.id ? (
                 <TagForm
                   initial={tag}

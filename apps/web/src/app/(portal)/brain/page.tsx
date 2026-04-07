@@ -16,6 +16,10 @@ const AGENTS = [
   { name: "Deal Agent", skills: 4, interactions: 156, memoryFragments: 41, budgetUsed: 9, budgetLimit: 30 },
 ];
 
+const panelClass =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const kpiLabelClass = "text-xs font-medium uppercase tracking-wide text-gray-500";
+
 export default function BrainPage() {
   const latest = USAGE_DATA[USAGE_DATA.length - 1]!;
   const first = USAGE_DATA[0]!;
@@ -32,25 +36,25 @@ export default function BrainPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="card">
-          <p className="label">Custo este mês</p>
+        <div className={panelClass}>
+          <p className={kpiLabelClass}>Custo este mês</p>
           <p className="text-3xl font-bold text-blue-400 mt-1">${latest.cost}</p>
           <p className="text-xs text-gray-500 mt-1">modelo: {latest.model}</p>
         </div>
-        <div className="card">
-          <p className="label">Economia acumulada</p>
+        <div className={panelClass}>
+          <p className={kpiLabelClass}>Economia acumulada</p>
           <p className="text-3xl font-bold text-green-400 mt-1">-{savingPct}%</p>
           <p className="text-xs text-gray-500 mt-1">vs. mês 1</p>
         </div>
-        <div className="card">
-          <p className="label">Cache hit rate</p>
+        <div className={panelClass}>
+          <p className={kpiLabelClass}>Cache hit rate</p>
           <p className="text-3xl font-bold text-brand-400 mt-1">{latest.cacheHit}%</p>
           <p className="text-xs text-gray-500 mt-1">respostas da memória</p>
         </div>
       </div>
 
       {/* Cost chart (ASCII-style bars) */}
-      <div className="card">
+      <div className={panelClass}>
         <h2 className="font-semibold text-white mb-4">Evolução de Custo Mensal</h2>
         <div className="space-y-2">
           {USAGE_DATA.map((d) => {
@@ -82,7 +86,7 @@ export default function BrainPage() {
       </div>
 
       {/* Agents */}
-      <div className="card">
+      <div className={panelClass}>
         <h2 className="font-semibold text-white mb-4">Agentes Ativos</h2>
         <div className="space-y-3">
           {AGENTS.map((a) => {

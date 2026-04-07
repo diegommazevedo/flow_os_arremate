@@ -32,6 +32,9 @@ const COLUMNS: { key: SortKey; label: string; align: "left" | "center" | "right"
   { key: "completedThisWeek", label: "Concl. / Semana", align: "center" },
 ];
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -51,7 +54,7 @@ export function AssigneeTable({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <div className="card">
+      <div className={PANEL}>
         <h2 className="font-semibold text-white mb-4">👥 Performance por Assignee</h2>
         <p className="text-sm text-gray-500">Nenhum assignee com deals ativos.</p>
       </div>
@@ -59,7 +62,7 @@ export function AssigneeTable({ rows }: Props) {
   }
 
   return (
-    <div className="card">
+    <div className={PANEL}>
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <span className="text-lg">👥</span>

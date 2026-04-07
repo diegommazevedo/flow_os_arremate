@@ -31,6 +31,11 @@ interface AgentCfg {
 
 type WAType = "WHATSAPP_META" | "WHATSAPP_EVOLUTION";
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const PANEL_EMPTY =
+  "rounded-xl border border-gray-800 bg-gray-900/70 shadow-sm px-4 py-8 text-center text-gray-600";
+
 // ─── Helpers visuais ──────────────────────────────────────────────────────────
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
@@ -434,14 +439,14 @@ function WASection() {
           {[1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-gray-800" />)}
         </div>
       ) : integrations.length === 0 ? (
-        <div className="card text-center py-8 text-gray-600">
+        <div className={PANEL_EMPTY}>
           <p className="text-3xl mb-2">📱</p>
           <p className="text-sm">Nenhuma conta WhatsApp configurada</p>
         </div>
       ) : (
         <div className="space-y-2">
           {integrations.map(i => (
-            <div key={i.id} className="card">
+            <div key={i.id} className={PANEL}>
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">

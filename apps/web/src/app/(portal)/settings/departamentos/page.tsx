@@ -8,6 +8,11 @@ import { useState, useEffect } from "react";
 
 interface Departamento { id: string; nome: string; membros: string[]; createdAt: string }
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const PANEL_EMPTY =
+  "rounded-xl border border-gray-800 bg-gray-900/70 shadow-sm px-4 py-12 text-center text-gray-600";
+
 function Skeleton() {
   return (
     <div className="space-y-3 animate-pulse">
@@ -138,14 +143,14 @@ export default function DepartamentosPage() {
       )}
 
       {loading ? <Skeleton /> : depts.length === 0 ? (
-        <div className="card text-center py-12 text-gray-600">
+        <div className={PANEL_EMPTY}>
           <p className="text-3xl mb-2">🏢</p>
           <p className="text-sm">Nenhum departamento cadastrado ainda</p>
         </div>
       ) : (
         <div className="space-y-3">
           {depts.map(dept => (
-            <div key={dept.id} className="card">
+            <div key={dept.id} className={PANEL}>
               {editId === dept.id ? (
                 <DeptForm
                   initial={dept}

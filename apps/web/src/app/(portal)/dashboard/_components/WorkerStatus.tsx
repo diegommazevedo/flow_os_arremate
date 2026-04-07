@@ -75,6 +75,9 @@ function WorkerCard({ worker, icon, stats }: {
   );
 }
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+
 // ─── Section ──────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -87,7 +90,7 @@ export function WorkerStatus({ rpa, paymentBot, reportGen }: Props) {
   const anyError = [rpa, paymentBot, reportGen].some(w => w.status === "error");
 
   return (
-    <div className="card">
+    <div className={PANEL}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">

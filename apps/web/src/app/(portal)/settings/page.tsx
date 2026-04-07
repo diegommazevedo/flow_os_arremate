@@ -17,6 +17,12 @@ const SECURITY_INVARIANTS = [
   { code: "SEC-12", name: "Rotação de Secrets (90d)", status: "warn" },
 ] as const;
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const FIELD_LABEL = "text-xs font-medium text-gray-500 mb-1";
+const BADGE =
+  "inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium border";
+
 export default function SettingsPage() {
   const allOk = SECURITY_INVARIANTS.filter((i) => i.status === "ok").length;
   const warns = SECURITY_INVARIANTS.filter((i) => i.status === "warn").length;
@@ -29,38 +35,38 @@ export default function SettingsPage() {
       </div>
 
       {/* Workspace info */}
-      <div className="card">
+      <div className={PANEL}>
         <h2 className="font-semibold text-white mb-4">Workspace</h2>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <p className="label mb-1">Nome</p>
+            <p className={FIELD_LABEL}>Nome</p>
             <p className="text-white">Imobiliária Demo Caixa</p>
           </div>
           <div>
-            <p className="label mb-1">Slug</p>
+            <p className={FIELD_LABEL}>Slug</p>
             <code className="text-brand-400 text-xs bg-gray-800 px-2 py-1 rounded">demo-imobiliaria</code>
           </div>
           <div>
-            <p className="label mb-1">Template ativo</p>
+            <p className={FIELD_LABEL}>Template ativo</p>
             <p className="text-white">Imobiliária Caixa</p>
           </div>
           <div>
-            <p className="label mb-1">Plano</p>
+            <p className={FIELD_LABEL}>Plano</p>
             <p className="text-white">Pro</p>
           </div>
         </div>
       </div>
 
       {/* Security dashboard */}
-      <div className="card">
+      <div className={PANEL}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-white">Fortaleza — 12 Invariantes de Segurança</h2>
           <div className="flex gap-2">
-            <span className="badge bg-green-900/30 text-green-400 border border-green-800">
+            <span className={`${BADGE} bg-green-900/30 text-green-400 border-green-800`}>
               {allOk} OK
             </span>
             {warns > 0 && (
-              <span className="badge bg-amber-900/30 text-amber-400 border border-amber-800">
+              <span className={`${BADGE} bg-amber-900/30 text-amber-400 border-amber-800`}>
                 {warns} atenção
               </span>
             )}
@@ -94,7 +100,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Template */}
-      <div className="card">
+      <div className={PANEL}>
         <h2 className="font-semibold text-white mb-4">Template Engine</h2>
         <div className="space-y-2">
           {["real-estate", "clinic", "law-firm", "construction", "hospitality"].map((t) => (
@@ -108,7 +114,7 @@ export default function SettingsPage() {
             >
               <code className="text-sm text-gray-300">{t}</code>
               {t === "real-estate" && (
-                <span className="badge bg-brand-800 text-brand-300 border-brand-700">ativo</span>
+                <span className={`${BADGE} bg-brand-800 text-brand-300 border-brand-700`}>ativo</span>
               )}
             </div>
           ))}

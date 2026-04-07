@@ -31,6 +31,11 @@ function useCountdown(targetMs: number): string {
 
 // ─── Channel Badge ────────────────────────────────────────────────────────────
 
+const PANEL =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const PANEL_ALERT =
+  "rounded-xl border border-red-900/50 bg-red-950/10 p-4 shadow-sm";
+
 const CHANNEL_STYLES: Record<ChannelBadge, string> = {
   WA: "bg-green-900/60 text-green-400 border-green-800",
   EM: "bg-blue-900/60 text-blue-400 border-blue-800",
@@ -141,7 +146,7 @@ export function CriticalAlerts({ deals, q1Count, q1WipLimit }: Props) {
 
   if (localDeals.length === 0) {
     return (
-      <div className="card">
+      <div className={PANEL}>
         <SectionHeader q1Count={q1Count} q1WipLimit={q1WipLimit} isAtLimit={isAtLimit} />
         <div className="flex items-center gap-2 text-sm text-green-400 py-4">
           <span>✓</span>
@@ -152,7 +157,7 @@ export function CriticalAlerts({ deals, q1Count, q1WipLimit }: Props) {
   }
 
   return (
-    <div className="card border-red-900/50 bg-red-950/10">
+    <div className={PANEL_ALERT}>
       <SectionHeader q1Count={q1Count} q1WipLimit={q1WipLimit} isAtLimit={isAtLimit} />
 
       <div className="mt-3">

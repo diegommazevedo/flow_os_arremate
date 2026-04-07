@@ -11,6 +11,10 @@ const STAGE_METRICS = [
   { stage: "Contrato",        avg: 3.2, conversion: 98, deals: 3,  velocity: 0.7 },
 ];
 
+const panelClass =
+  "rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm";
+const kpiLabelClass = "text-xs font-medium uppercase tracking-wide text-gray-500";
+
 export default function AnalyticsPage() {
   const avgConversion = Math.round(
     STAGE_METRICS.reduce((s, m) => s + m.conversion, 0) / STAGE_METRICS.length,
@@ -24,21 +28,21 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <div className="card">
-          <p className="label">Conversão Média</p>
+        <div className={panelClass}>
+          <p className={kpiLabelClass}>Conversão Média</p>
           <p className="text-3xl font-bold text-green-400 mt-1">{avgConversion}%</p>
         </div>
-        <div className="card">
-          <p className="label">Ciclo de Venda Médio</p>
+        <div className={panelClass}>
+          <p className={kpiLabelClass}>Ciclo de Venda Médio</p>
           <p className="text-3xl font-bold text-white mt-1">46 dias</p>
         </div>
-        <div className="card">
-          <p className="label">Ticket Médio</p>
+        <div className={panelClass}>
+          <p className={kpiLabelClass}>Ticket Médio</p>
           <p className="text-3xl font-bold text-brand-400 mt-1">R$ 780k</p>
         </div>
       </div>
 
-      <div className="card">
+      <div className={panelClass}>
         <h2 className="font-semibold text-white mb-4">Métricas por Stage</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
