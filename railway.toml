@@ -1,3 +1,4 @@
 [deploy]
 startCommand = "node /app/apps/web/.next/standalone/apps/web/server.js"
 healthcheckPath = "/"
+preDeployCommand = ""
