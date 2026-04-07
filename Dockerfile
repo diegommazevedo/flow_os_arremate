@@ -13,9 +13,10 @@ RUN pnpm install --frozen-lockfile
 
 COPY apps/web/ ./apps/web/
 
+RUN ./node_modules/.bin/prisma generate --schema=./apps/web/prisma/schema.prisma
+
 WORKDIR /app/apps/web
 
-RUN pnpm prisma generate
 RUN pnpm build
 
 EXPOSE 3000
