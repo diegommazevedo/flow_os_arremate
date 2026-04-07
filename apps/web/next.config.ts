@@ -3,7 +3,8 @@ import withPWAInit from "@ducanh2912/next-pwa";
 
 const withPWA = withPWAInit({
   dest:    "public",
-  disable: process.env["NODE_ENV"] === "development",
+  // Desligado também em produção: SW + cacheOnFrontEndNav serviam chunks de build antigo na navegação por <Link>.
+  disable: true,
   cacheOnFrontEndNav: true,
   cacheStartUrl:      true,
 });
