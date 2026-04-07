@@ -1,4 +1,5 @@
 "use client";
+"use client";
 
 import { useState, FormEvent } from "react";
 
@@ -34,8 +35,8 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     if (!email) return;
     setStatus("loading");
     try {
-      const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const supabaseUrl  = process.env["NEXT_PUBLIC_SUPABASE_URL"];
+      const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
       if (!supabaseUrl || !supabaseAnon) {
         throw new Error("Variáveis Supabase ausentes no ambiente de produção.");
       }
@@ -61,8 +62,8 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     if (!email || !pass) return;
     setStatus("loading");
     try {
-      const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const supabaseUrl  = process.env["NEXT_PUBLIC_SUPABASE_URL"];
+      const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
       if (!supabaseUrl || !supabaseAnon) {
         throw new Error("Variáveis Supabase ausentes no ambiente de produção.");
       }
@@ -150,7 +151,7 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
                   required
                   disabled={!hasSupabase}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200
-                    focus:outline-none focus:border-indigo-500 placeholder:text-gray-600
+                    focus:outline-none focus:border-ind
                     disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
