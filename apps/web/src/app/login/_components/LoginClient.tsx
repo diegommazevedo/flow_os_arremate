@@ -34,14 +34,16 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     if (!email) return;
     setStatus("loading");
     try {
-      const supabaseUrl  = process.env["NEXT_PUBLIC_SUPABASE_URL"]  ?? "";
-      const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ?? "";
+      const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnon) {
+        throw new Error("Variáveis Supabase ausentes no ambiente de produção.");
+      }
       const { createBrowserClient } = await import("@supabase/ssr");
       const sb = createBrowserClient(supabaseUrl, supabaseAnon);
       const { error } = await sb.auth.signInWithOtp({
         email,
         options: {
-          // /auth/callback troca o code por cookies de sessão, depois redireciona para `next`
           emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
         },
       });
@@ -59,8 +61,11 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     if (!email || !pass) return;
     setStatus("loading");
     try {
-      const supabaseUrl  = process.env["NEXT_PUBLIC_SUPABASE_URL"]  ?? "";
-      const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ?? "";
+      const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnon) {
+        throw new Error("Variáveis Supabase ausentes no ambiente de produção.");
+      }
       const { createBrowserClient } = await import("@supabase/ssr");
       const sb = createBrowserClient(supabaseUrl, supabaseAnon);
       const { error } = await sb.auth.signInWithPassword({ email, password: pass });
