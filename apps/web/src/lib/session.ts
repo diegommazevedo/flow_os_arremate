@@ -1,11 +1,11 @@
-﻿/**
+/**
  * Helper de sessÃ£o servidor.
  * [SEC-03] workspaceId e userId vÃªm sempre da sessÃ£o autenticada.
  */
 
 import "server-only";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { db } from "@flow-os/db";
 
@@ -42,8 +42,14 @@ export async function getSessionContext(): Promise<SessionContext | null> {
       select: { workspaceId: true, role: true },
     });
   } catch (err) {
-    // Falhas do Prisma (engine nativo, conexÃ£o, schema etc.) nÃ£o devem derrubar a renderizaÃ§Ã£o do servidor.
-    console.error("[session] db.member.findFirst failed", err);
+    // Falhas do Prisma (engine, conexão, schema) não derrubam o render — mas precisamos de trilha no servidor.
+    let requestId: string | undefined;
+    try {
+      requestId = (await headers()).get("x-flowos-request-id") ?? undefined;
+    } catch {
+      requestId = undefined;
+    }
+    console.error("[session] db.member.findFirst failed", { requestId, err });
     return null;
   }
 
