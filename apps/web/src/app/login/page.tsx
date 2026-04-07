@@ -37,6 +37,7 @@ export default async function LoginPage({
   const errorRaw = firstParam(sp.error);
 
   const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? "";
+  const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ?? "";
   const devWs = process.env["DEFAULT_WORKSPACE_ID"] ?? "";
 
   const next = safeInternalPath(nextRaw, "/dashboard");
@@ -52,13 +53,17 @@ export default async function LoginPage({
     redirect(next);
   }
 
-  const hasSupabase = !!supabaseUrl;
+  const hasSupabase = supabaseUrl.length > 0 && supabaseAnon.length > 0;
 
-  // hasSupabase resolvido no servidor evita hydration mismatch no cliente
+  // hasSupabase + credenciais injetadas no servidor: o bundle client pode não ter NEXT_PUBLIC_*
+  // embutidas se o build (ex.: Railway) rodou sem essas variáveis — createBrowserClient quebrava na UI.
   return (
     <LoginClient
       next={next}
       hasSupabase={hasSupabase}
+      {...(hasSupabase
+        ? { supabasePublicUrl: supabaseUrl, supabaseAnonKey: supabaseAnon }
+        : {})}
       {...(errorRaw ? { callbackError: errorRaw } : {})}
     />
   );

@@ -1,5 +1,4 @@
 "use client";
-"use client";
 
 import { useState, FormEvent } from "react";
 
@@ -7,6 +6,9 @@ interface Props {
   next:           string;
   hasSupabase:    boolean;
   callbackError?: string;
+  /** Do servidor (runtime) — anula dependência do embed de NEXT_PUBLIC_* no build do cliente. */
+  supabasePublicUrl?: string;
+  supabaseAnonKey?: string;
 }
 
 type Mode = "magic" | "password";
@@ -19,7 +21,53 @@ function safeDecodeURIComponent(s: string): string {
   }
 }
 
-export default function LoginClient({ next, hasSupabase, callbackError }: Props) {
+const CALLBACK_ERROR_FALLBACK =
+  "Não foi possível concluir o login. O link pode ter expirado ou já foi usado — envie um novo magic link.";
+
+/** Mensagens para `?error=` vindo do `/auth/callback` (códigos curtos). URLs antigas podem trazer texto do SDK. */
+function messageForCallbackError(raw: string): string {
+  const key = safeDecodeURIComponent(raw).trim();
+  switch (key) {
+    case "missing_code":
+      return "Link inválido ou incompleto. Solicite um novo magic link.";
+    case "supabase_not_configured":
+      return "Autenticação indisponível neste ambiente.";
+    case "session_exchange_failed":
+      return CALLBACK_ERROR_FALLBACK;
+    default:
+      break;
+  }
+  if (key.length > 80 || key.includes("@supabase") || key.toLowerCase().includes("supabase")) {
+    return CALLBACK_ERROR_FALLBACK;
+  }
+  return "Não foi possível autenticar. Tente novamente.";
+}
+
+function resolveSupabaseBrowserConfig(
+  fromServerUrl?: string,
+  fromServerAnon?: string,
+): { url: string; anonKey: string } | null {
+  const url = (fromServerUrl ?? process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? "").trim();
+  const anonKey = (fromServerAnon ?? process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"] ?? "").trim();
+  if (!url || !anonKey) return null;
+  return { url, anonKey };
+}
+
+function friendlyAuthError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Credenciais inválidas";
+  if (msg.includes("URL and API key are required")) {
+    return "Configuração Supabase incompleta: defina NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY no serviço e redeploy.";
+  }
+  return msg;
+}
+
+export default function LoginClient({
+  next,
+  hasSupabase,
+  callbackError,
+  supabasePublicUrl,
+  supabaseAnonKey,
+}: Props) {
   const [mode, setMode] = useState<Mode>("magic");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -27,7 +75,7 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     callbackError ? "error" : "idle",
   );
   const [message, setMessage] = useState(
-    callbackError ? `Erro ao autenticar: ${safeDecodeURIComponent(callbackError)}` : "",
+    callbackError ? messageForCallbackError(callbackError) : "",
   );
 
   async function handleMagicLink(e: FormEvent) {
@@ -35,13 +83,12 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     if (!email) return;
     setStatus("loading");
     try {
-      const supabaseUrl  = process.env["NEXT_PUBLIC_SUPABASE_URL"];
-      const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
-      if (!supabaseUrl || !supabaseAnon) {
+      const cfg = resolveSupabaseBrowserConfig(supabasePublicUrl, supabaseAnonKey);
+      if (!cfg) {
         throw new Error("Variáveis Supabase ausentes no ambiente de produção.");
       }
       const { createBrowserClient } = await import("@supabase/ssr");
-      const sb = createBrowserClient(supabaseUrl, supabaseAnon);
+      const sb = createBrowserClient(cfg.url, cfg.anonKey);
       const { error } = await sb.auth.signInWithOtp({
         email,
         options: {
@@ -53,7 +100,7 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
       setMessage(`Link enviado para ${email}. Verifique sua caixa de entrada.`);
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Erro ao enviar link");
+      setMessage(friendlyAuthError(err));
     }
   }
 
@@ -62,19 +109,18 @@ export default function LoginClient({ next, hasSupabase, callbackError }: Props)
     if (!email || !pass) return;
     setStatus("loading");
     try {
-      const supabaseUrl  = process.env["NEXT_PUBLIC_SUPABASE_URL"];
-      const supabaseAnon = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
-      if (!supabaseUrl || !supabaseAnon) {
+      const cfg = resolveSupabaseBrowserConfig(supabasePublicUrl, supabaseAnonKey);
+      if (!cfg) {
         throw new Error("Variáveis Supabase ausentes no ambiente de produção.");
       }
       const { createBrowserClient } = await import("@supabase/ssr");
-      const sb = createBrowserClient(supabaseUrl, supabaseAnon);
+      const sb = createBrowserClient(cfg.url, cfg.anonKey);
       const { error } = await sb.auth.signInWithPassword({ email, password: pass });
       if (error) throw error;
       window.location.href = next;
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Credenciais inválidas");
+      setMessage(friendlyAuthError(err));
     }
   }
 
