@@ -1,16 +1,24 @@
 FROM node:22-alpine
 
+RUN apk add --no-cache openssl
+
 RUN npm install -g pnpm@9.12.0
 
 WORKDIR /app
 
 COPY pnpm-workspace.yaml ./
 COPY package.json pnpm-lock.yaml ./
-COPY packages/ ./packages/
+COPY tsconfig.json ./
+
+COPY packages/db/package.json ./packages/db/
+COPY packages/core/package.json ./packages/core/
+COPY packages/brain/package.json ./packages/brain/
+COPY packages/templates/package.json ./packages/templates/
 COPY apps/web/package.json ./apps/web/
 
 RUN pnpm install --frozen-lockfile
 
+COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
 
 RUN ./packages/db/node_modules/.bin/prisma generate --schema=./packages/db/prisma/schema.prisma
