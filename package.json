@@ -24,10 +24,6 @@
     "migrate:pipedrive": "pnpm --filter @flow-os/db migrate:pipedrive --",
     "diagnose": "npx tsx scripts/diagnose.ts"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "devDependencies": {
     "tsx": "^4.19.1"
   }
