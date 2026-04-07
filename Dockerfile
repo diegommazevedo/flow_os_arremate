@@ -18,7 +18,10 @@ WORKDIR /app/apps/web
 RUN pnpm build
 RUN cp -r /app/apps/web/.next/static /app/apps/web/.next/standalone/apps/web/.next/static
 RUN cp -r /app/apps/web/public /app/apps/web/.next/standalone/apps/web/public
-RUN mkdir -p /app/apps/web/.next/standalone/apps/web/.prisma/client && \
+RUN mkdir -p /app/apps/web/.next/standalone/apps/web/.next/server/.prisma/client && \
+    cp -r /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma/client/. \
+    /app/apps/web/.next/standalone/apps/web/.next/server/.prisma/client/ && \
+    mkdir -p /app/apps/web/.next/standalone/apps/web/.prisma/client && \
     cp -r /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma/client/. \
     /app/apps/web/.next/standalone/apps/web/.prisma/client/
 EXPOSE 3000
