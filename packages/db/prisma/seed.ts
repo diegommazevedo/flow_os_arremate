@@ -216,7 +216,7 @@ async function main() {
 
   console.log(`  Workspace: ${workspace.name}`);
 
-  // Evolution API — arrematador-01 (logo após workspace: aplica mesmo se re-seed falhar em agentAuditLog por RLS)
+  // Evolution API — instância arrematador_01 (logo após workspace: aplica mesmo se re-seed falhar em agentAuditLog por RLS)
   const evolutionIntegration = await db.workspaceIntegration.upsert({
     where: { id: "evolution-arrematador-01" },
     create: {
@@ -226,7 +226,7 @@ async function main() {
       name: "Arrematador 01",
       status: "ACTIVE",
       config: {
-        EVOLUTION_INSTANCE_NAME: "arrematador-01",
+        EVOLUTION_INSTANCE_NAME: "arrematador_01",
         EVOLUTION_API_URL: "http://localhost:8080",
         apiUrl: "http://localhost:8080",
       },
@@ -235,7 +235,7 @@ async function main() {
       status: "ACTIVE",
       name: "Arrematador 01",
       config: {
-        EVOLUTION_INSTANCE_NAME: "arrematador-01",
+        EVOLUTION_INSTANCE_NAME: "arrematador_01",
         EVOLUTION_API_URL: "http://localhost:8080",
         apiUrl: "http://localhost:8080",
       },

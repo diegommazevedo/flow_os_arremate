@@ -13,7 +13,7 @@ import path from "path";
 
 const API_URL  = process.env["EVOLUTION_API_URL"]      ?? "http://localhost:8080";
 const API_KEY  = process.env["EVOLUTION_API_KEY"]       ?? "flowos-evolution-2026";
-const INSTANCE = process.env["EVOLUTION_INSTANCE_NAME"] ?? "arrematador-01";
+const INSTANCE = process.env["EVOLUTION_INSTANCE_NAME"] ?? "arrematador_01";
 const OUT_PATH = path.join(process.cwd(), "..", "..", ".logs", "evolution-qr-fresh.png");
 
 async function fetchQR(instance: string): Promise<{ base64?: string; count?: number; pairingCode?: string | null }> {

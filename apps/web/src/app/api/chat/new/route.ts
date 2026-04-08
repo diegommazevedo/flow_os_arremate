@@ -120,7 +120,12 @@ async function resolveInstanceName(
   if (fromList) return fromList;
 
   // 3) Tentar nomes comuns em dev
-  for (const guess of [ctx.configInstance, "arrematador-01", "arrematador-02"].filter(Boolean) as string[]) {
+  for (const guess of [
+    ctx.configInstance,
+    "arrematador_01",
+    "arrematador-01",
+    "arrematador-02",
+  ].filter(Boolean) as string[]) {
     const st = await connectionState(ctx.apiUrl, ctx.apiKey, guess);
     if (st === "open") return guess;
   }

@@ -19,6 +19,8 @@ coverage/
 # Env files
 .env
 .env.*
+!.env.example
+!.env.mcp.example
 
 # Local/editor dirs
 .cursor/
