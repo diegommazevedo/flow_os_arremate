@@ -12,7 +12,7 @@ import fs   from "fs";
 import path from "path";
 
 const API_URL  = process.env["EVOLUTION_API_URL"]      ?? "http://localhost:8080";
-const API_KEY  = process.env["EVOLUTION_API_KEY"]       ?? "flowos-evolution-2026";
+const API_KEY  = process.env["EVOLUTION_API_KEY"]       ?? "";
 const INSTANCE = process.env["EVOLUTION_INSTANCE_NAME"] ?? "arrematador_01";
 const OUT_PATH = path.join(process.cwd(), "..", "..", ".logs", "evolution-qr-fresh.png");
 
@@ -40,6 +40,13 @@ function saveQR(base64: string): void {
 }
 
 async function main(): Promise<void> {
+  if (!API_KEY) {
+    console.error(
+      "❌ EVOLUTION_API_KEY não definida. Defina em .env.local ou no ambiente — não há fallback em código [secrets].",
+    );
+    process.exit(1);
+  }
+
   console.log(`\n🔍 Instância: ${INSTANCE}`);
   console.log(`   API: ${API_URL}\n`);
 
