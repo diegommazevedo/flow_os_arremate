@@ -319,4 +319,6 @@ Estas decisões são **intencionais** — serão tomadas com base em evidências
 
 ---
 
-*Este documento é versionado no repositório. Toda decisão arquitetural relevante tomada em qualquer sessão de trabalho deve ser refletida aqui via commit. A IA da ocasião se reconstitui a partir do que está escrito aqui — não há memória na nuvem. Este arquivo é a maleta.*
+*Este documento é versionado no repositório. Toda decisão arquitetural relevante tomada em qualquer sessão de trabalho deve ser refletida aqui via commit. A IA da ocasião se reconstitui a partir do que está escrito aqui — não há memória na nuvem. Este arquivo é a maleta da **lei**.*
+
+*Complemento operacional (como plugar skills, rules locais e playbooks nas ferramentas): **`docs/MALETA-OPERADOR.md`**.*
