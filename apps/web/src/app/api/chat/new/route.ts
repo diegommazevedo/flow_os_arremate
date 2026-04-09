@@ -19,8 +19,10 @@ import { getSessionContext } from "@/lib/session";
 import { decrypt } from "@/lib/encrypt";
 import {
   ensureInstanceOpen,
+  isEvolutionSessionOpenState,
   normalizeEvolutionApiBaseUrl,
   normalizeInstancesPayload,
+  parseEvolutionConnectionStateJson,
 } from "@/lib/evolution";
 
 const Body = z.object({
@@ -101,7 +103,7 @@ async function tryFetchOpenInstance(apiUrl: string, apiKey: string): Promise<str
 
   const raw  = await res.json() as unknown;
   const list = normalizeInstancesPayload(raw);
-  const open = list.find(i => i.state === "open");
+  const open = list.find(i => isEvolutionSessionOpenState(i.state));
   return open?.instanceName ?? null;
 }
 
@@ -135,7 +137,7 @@ async function resolveInstanceName(
     "arrematador-02",
   ].filter(Boolean) as string[]) {
     const st = await connectionState(ctx.apiUrl, ctx.apiKey, guess);
-    if (st === "open") return guess;
+    if (st && isEvolutionSessionOpenState(st)) return guess;
   }
 
   throw new Error(

@@ -11,7 +11,7 @@
  * [SEC-06] AuditLog em cada mutação (nas rotas API).
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,15 @@ const PANEL_EMPTY =
   "rounded-xl border border-gray-800 bg-gray-900/70 shadow-sm px-4 py-8 text-center text-gray-600";
 
 // ─── Helpers visuais ──────────────────────────────────────────────────────────
+
+/** Imagem PNG/base64 (Evolution). Texto curto ou `2@…` não é QR visual. */
+function evolutionPayloadLooksLikeQrImage(s: string): boolean {
+  const t = s.trim();
+  if (!t) return false;
+  if (t.startsWith("data:image")) return true;
+  if (t.startsWith("2@")) return false;
+  return t.length >= 400;
+}
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
@@ -165,8 +174,14 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
     setTesting(false);
   };
 
+  const rollbackIntegration = async (integId: string) => {
+    await fetch(`/api/integrations/whatsapp/${integId}/delete`, { method: "DELETE" }).catch(() => null);
+  };
+
   const connectEvolutionQR = async () => {
     setConnectingQR(true); setError(null); setQrCode(null); setQrConnected(false);
+    stopPolling();
+    let createdId: string | null = null;
     try {
       // 1. Criar integração no banco
       const createR = await fetch("/api/integrations/whatsapp/create", {
@@ -180,26 +195,53 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
       const createD = await createR.json() as { integration?: { id: string } };
       const integId = createD.integration?.id;
       if (!integId) throw new Error("ID não retornado");
+      createdId = integId;
 
-      // 2. Solicitar QR Code
+      // 2. Solicitar QR Code (servidor já faz retries / restart)
       const qrR = await fetch("/api/integrations/evolution/status", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ integrationId: integId }),
       });
-      const qrD = await qrR.json() as { qrcode?: string; error?: string };
-      if (qrD.qrcode) {
-        setQrCode(qrD.qrcode);
-      } else {
-        setError(qrD.error ?? "QR Code não disponível — tente novamente em alguns segundos");
+      const qrD = await qrR.json() as {
+        qrcode?: string;
+        error?: string;
+        evolutionQrFlow?: string;
+        diagnostic?: { responseKeysHint?: string[]; usedNumberParam?: boolean };
+      };
+
+      if (!qrR.ok && qrR.status !== 202) {
+        const bits = [qrD.error ?? `HTTP ${qrR.status}`];
+        if (qrD.evolutionQrFlow) bits.push(`[${qrD.evolutionQrFlow}]`);
+        throw new Error(bits.join(" "));
       }
 
-      // 3. Polling de status a cada 3s
+      const rawQr = (qrD.qrcode ?? "").trim();
+      if (!rawQr) {
+        const parts = [
+          qrD.error ?? "QR Code não disponível após as tentativas do servidor.",
+          qrD.diagnostic?.responseKeysHint?.length
+            ? `Resposta Evolution (chaves): ${qrD.diagnostic.responseKeysHint.join(", ")}.`
+            : null,
+          qrD.diagnostic?.usedNumberParam === false
+            ? "No Railway (flowos-web), defina EVOLUTION_CONNECT_NUMBER com o WhatsApp só em dígitos — algumas builds só devolvem QR com ?number=."
+            : null,
+          qrD.evolutionQrFlow ? `Build FlowOS: ${qrD.evolutionQrFlow}.` : null,
+        ].filter(Boolean);
+        setError(parts.join(" "));
+        await rollbackIntegration(integId);
+        return;
+      }
+
+      const hadVisualQr = evolutionPayloadLooksLikeQrImage(rawQr);
+      setQrCode(rawQr);
+
+      // 3. Polling só quando há payload útil (imagem ou código de pareamento a mostrar)
       setQrPolling(true);
       pollRef.current = setInterval(async () => {
         const testR = await fetch(`/api/integrations/whatsapp/${integId}/test`, { method: "POST" })
           .catch(() => null);
         if (!testR?.ok) return;
-        const testD = await testR.json() as { ok: boolean };
+        const testD = await testR.json() as { ok: boolean; state?: string };
         if (testD.ok) {
           stopPolling();
           setQrConnected(true);
@@ -207,14 +249,26 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
         }
       }, 3000);
 
-      // Timeout de 2 minutos
+      // QR expira ~60s mas o utilizador pode demorar; Evolution por vezes reporta "connected" em vez de "open"
       timeoutRef.current = setTimeout(() => {
         stopPolling();
-        setError("Tempo esgotado. Escaneie o QR Code antes que ele expire e tente novamente.");
-      }, 120_000);
+        if (!hadVisualQr) {
+          setError(
+            "Tempo limite (5 min): nenhuma imagem de QR foi recebida (só texto/código ou resposta incompleta da Evolution). " +
+              "Defina EVOLUTION_CONNECT_NUMBER no flowos-web (Railway) e faça redeploy. " +
+              "Se viu só «tempo esgotado» sem nada no meio, era provavelmente build antigo que iniciava o timer sem QR.",
+          );
+        } else {
+          setError(
+            "Tempo esgotado (5 min). Se já escaneou, feche o modal — a sessão pode estar ativa no manager Evolution. " +
+              "Se o QR expirou, use «Cancelar e tentar novamente».",
+          );
+        }
+      }, 300_000);
 
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao conectar");
+      if (createdId) await rollbackIntegration(createdId);
     } finally {
       setConnectingQR(false);
     }
@@ -249,7 +303,13 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
       <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h3 className="text-sm font-semibold text-white">Adicionar conta WhatsApp</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300">✕</button>
+          <button
+            type="button"
+            onClick={() => { stopPolling(); onClose(); }}
+            className="text-gray-500 hover:text-gray-300"
+          >
+            ✕
+          </button>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -319,19 +379,40 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
                 </div>
               ) : qrCode ? (
                 <div className="space-y-2">
-                  <p className="text-xs text-gray-400 text-center">Escaneie o QR Code no WhatsApp</p>
-                  <div className="flex justify-center">
-                    {/* QR Code pode ser base64 data URI ou string pairingCode */}
-                    {qrCode.startsWith("data:") ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={qrCode} alt="QR Code WhatsApp" className="w-52 h-52 rounded-xl border border-gray-700" />
-                    ) : (
-                      <div className="w-52 h-52 rounded-xl border border-gray-700 bg-white flex items-center justify-center">
-                        {/* Fallback: exibe código pairing como texto */}
-                        <code className="text-[10px] text-gray-800 break-all p-2 text-center">{qrCode}</code>
-                      </div>
-                    )}
-                  </div>
+                  {(() => {
+                    const bareB64 =
+                      !qrCode.startsWith("data:") &&
+                      evolutionPayloadLooksLikeQrImage(qrCode) &&
+                      /^[A-Za-z0-9+/=\s]+$/.test(qrCode.replace(/\s/g, "").slice(0, 80));
+                    const imgSrc = qrCode.startsWith("data:")
+                      ? qrCode
+                      : bareB64
+                        ? `data:image/png;base64,${qrCode.replace(/\s/g, "")}`
+                        : null;
+                    return (
+                      <>
+                        {imgSrc ? (
+                          <p className="text-xs text-gray-400 text-center">Escaneie o QR Code no WhatsApp</p>
+                        ) : (
+                          <p className="text-xs text-amber-200/90 text-center">
+                            Sem imagem QR nesta resposta — use o código abaixo em WhatsApp → Dispositivos ligados → ligar dispositivo
+                          </p>
+                        )}
+                        <div className="flex justify-center">
+                          {imgSrc ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={imgSrc} alt="QR Code WhatsApp" className="w-52 h-52 rounded-xl border border-gray-700" />
+                          ) : (
+                            <div className="w-full max-w-sm min-h-[8rem] rounded-xl border border-amber-800/40 bg-gray-950/80 flex items-center justify-center p-3">
+                              <code className="text-xs sm:text-sm text-amber-100/95 break-all text-center leading-snug">
+                                {qrCode}
+                              </code>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
                   {qrPolling && (
                     <div className="flex items-center gap-2 justify-center text-xs text-gray-400">
                       <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -402,6 +483,15 @@ function WASection() {
 
   useEffect(load, [load]);
 
+  const duplicateNameKeys = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const i of integrations) {
+      const k = `${i.type}\t${i.name.trim().toLowerCase()}`;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return counts;
+  }, [integrations]);
+
   const remove = async (id: string, name: string) => {
     if (!confirm(`Remover "${name}"? Esta ação é irreversível.`)) return;
     await fetch(`/api/integrations/whatsapp/${id}/delete`, { method: "DELETE" });
@@ -445,12 +535,23 @@ function WASection() {
         </div>
       ) : (
         <div className="space-y-2">
-          {integrations.map(i => (
+          {integrations.map(i => {
+            const dupKey   = `${i.type}\t${i.name.trim().toLowerCase()}`;
+            const isDupRow = (duplicateNameKeys.get(dupKey) ?? 0) > 1;
+            return (
             <div key={i.id} className={PANEL}>
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <p className="text-sm font-semibold text-white">{i.name}</p>
+                    {isDupRow && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[9px] font-medium border border-amber-700/60 text-amber-200/90 bg-amber-950/40"
+                        title="Várias integrações com o mesmo nome — mantenha só uma por URL+instância Evolution"
+                      >
+                        dup · {i.id.slice(-6)}
+                      </span>
+                    )}
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium border ${TYPE_COLOR[i.type] ?? ""}`}>
                       {TYPE_LABEL[i.type] ?? i.type}
                     </span>
@@ -475,9 +576,14 @@ function WASection() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      <p className="text-[11px] text-gray-500 max-w-xl">
+        Cada &quot;Conectar via QR Code&quot; ou gravação criava uma linha nova. Duplicatas com o mesmo nome aparecem com o selo <span className="text-amber-200/80">dup</span> — remova as extras e deixe uma só conta por instância Evolution.
+      </p>
 
       <button onClick={() => setShowModal(true)} className="btn-primary px-4 py-2 text-sm">
         + Adicionar conta WhatsApp

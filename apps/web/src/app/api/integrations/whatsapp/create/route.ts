@@ -53,8 +53,36 @@ export async function POST(req: NextRequest) {
       autoReply:          parsed.data.autoReply,
     };
   } else {
+    const apiUrlNorm = normalizeEvolutionApiBaseUrl(defaultSanitizer.clean(parsed.data.apiUrl));
+    const instNorm   = defaultSanitizer.clean(parsed.data.instanceName).trim().toLowerCase();
+
+    const siblings = await db.workspaceIntegration.findMany({
+      where: {
+        workspaceId: session.workspaceId,
+        type:        "WHATSAPP_EVOLUTION",
+        status:      "ACTIVE",
+      },
+      select: { id: true, config: true },
+    });
+
+    for (const row of siblings) {
+      const c = (row.config ?? {}) as Record<string, unknown>;
+      const u = normalizeEvolutionApiBaseUrl(String(c["apiUrl"] ?? ""));
+      const n = String(c["instanceName"] ?? "").trim().toLowerCase();
+      if (u === apiUrlNorm && n === instNorm) {
+        return NextResponse.json(
+          {
+            error:
+              "Já existe integração Evolution com esta URL e nome de instância. Remova a duplicata na lista ou reutilize a conta existente.",
+            existingIntegrationId: row.id,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     config = {
-      apiUrl:       normalizeEvolutionApiBaseUrl(defaultSanitizer.clean(parsed.data.apiUrl)),
+      apiUrl:       apiUrlNorm,
       apiKey:       encrypt(parsed.data.apiKey),
       instanceName: defaultSanitizer.clean(parsed.data.instanceName).trim(),
     };

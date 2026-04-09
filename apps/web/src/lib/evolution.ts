@@ -4,11 +4,14 @@
 export {
   normalizeInstancesPayload,
   ensureInstanceOpen,
+  parseEvolutionConnectionStateJson,
+  isEvolutionSessionOpenState,
   type EnsureInstanceOpenOpts,
 } from "@flow-os/brain/evolution/instance-state";
 
 /** Marca da rota de QR no FlowOS (confirmar deploy / troubleshooting). */
-export const EVOLUTION_QR_FLOW = "connect-v2.1.1" as const;
+/** Incrementar quando mudar a estratégia de QR (confirmar deploy via resposta JSON). */
+export const EVOLUTION_QR_FLOW = "connect-v2.1.2-retries" as const;
 
 /**
  * Base URL da REST Evolution (host raiz). Não usar URL do manager (/manager) nem barra final.

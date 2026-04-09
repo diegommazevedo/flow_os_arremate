@@ -3,6 +3,35 @@
  * Usado antes de sendText / sendMedia para falhar cedo se a sessão não estiver `open`.
  */
 
+/** GET /instance/connectionState/:instance — JSON varia (instance.state, connectionStatus, data aninhado). */
+export function parseEvolutionConnectionStateJson(raw: unknown): string {
+  const unwrapOuter = (o: Record<string, unknown>): Record<string, unknown> => {
+    let x = o;
+    for (const key of ["data", "response"] as const) {
+      const inner = x[key];
+      if (inner && typeof inner === "object" && inner !== null && !Array.isArray(inner)) {
+        x = { ...x, ...(inner as Record<string, unknown>) };
+      }
+    }
+    return x;
+  };
+
+  if (raw === null || typeof raw !== "object") return "";
+  const o = unwrapOuter(raw as Record<string, unknown>);
+  const inst = o["instance"];
+  if (inst && typeof inst === "object" && inst !== null) {
+    const i = inst as Record<string, unknown>;
+    return String(i["state"] ?? i["connectionStatus"] ?? i["status"] ?? "").trim();
+  }
+  return String(o["state"] ?? o["connectionStatus"] ?? o["status"] ?? "").trim();
+}
+
+/** Evolution/Baileys: sessão utilizable (nomes variam por build). */
+export function isEvolutionSessionOpenState(state: string): boolean {
+  const s = state.trim().toLowerCase();
+  return s === "open" || s === "connected";
+}
+
 export function normalizeInstancesPayload(raw: unknown): Array<{ instanceName: string; state: string }> {
   const rows: Array<{ instanceName: string; state: string }> = [];
 
@@ -75,7 +104,7 @@ export async function ensureInstanceOpen(
   const list = normalizeInstancesPayload(raw);
   const row = list.find((i) => i.instanceName === instanceName);
 
-  if (!row || row.state !== "open") {
+  if (!row || !isEvolutionSessionOpenState(row.state)) {
     throw new Error(`EVOLUTION_CLOSED: ${instanceName} está ${row?.state ?? "não encontrada"}`);
   }
 }

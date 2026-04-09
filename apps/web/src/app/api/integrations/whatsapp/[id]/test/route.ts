@@ -5,7 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@flow-os/db";
 import { getSessionContext } from "@/lib/session";
 import { decrypt } from "@/lib/encrypt";
-import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
+import {
+  isEvolutionSessionOpenState,
+  normalizeEvolutionApiBaseUrl,
+  parseEvolutionConnectionStateJson,
+} from "@/lib/evolution";
 
 export async function POST(
   _req: NextRequest,
@@ -53,9 +57,9 @@ export async function POST(
       if (!res.ok) {
         return NextResponse.json({ ok: false, error: `HTTP ${res.status}` });
       }
-      const data = await res.json() as { instance?: { state?: string } };
-      const state = data.instance?.state ?? "unknown";
-      return NextResponse.json({ ok: state === "open", state });
+      const raw = await res.json() as unknown;
+      const state = parseEvolutionConnectionStateJson(raw) || "unknown";
+      return NextResponse.json({ ok: isEvolutionSessionOpenState(state), state });
     }
 
     return NextResponse.json({ ok: false, error: "Tipo nao suportado" });

@@ -10,6 +10,7 @@ import {
   EVOLUTION_QR_FLOW,
   normalizeEvolutionApiBaseUrl,
   normalizeInstancesPayload,
+  parseEvolutionConnectionStateJson,
 } from "@/lib/evolution";
 
 const PostSchema = z.object({
@@ -21,6 +22,8 @@ function evolutionConnectionParams(config: Record<string, string>): {
   apiUrl: string;
   apiKey: string;
   instance: string;
+  /** DDI+DDD+número só dígitos — GET /instance/connect/...?number= (workaround Evolution). */
+  connectDigits: string;
 } {
   const apiUrl = normalizeEvolutionApiBaseUrl(
     config["apiUrl"] ||
@@ -42,7 +45,13 @@ function evolutionConnectionParams(config: Record<string, string>): {
     config["EVOLUTION_INSTANCE_NAME"] ??
     ""
   ).trim();
-  return { apiUrl, apiKey, instance };
+  const connectDigits = (
+    config["connectNumber"] ??
+    config["EVOLUTION_CONNECT_NUMBER"] ??
+    process.env["EVOLUTION_CONNECT_NUMBER"] ??
+    ""
+  ).replace(/\D/g, "");
+  return { apiUrl, apiKey, instance, connectDigits };
 }
 
 /** Evolution v2 embute o payload útil em `data` / `response`. */
@@ -58,38 +67,140 @@ function unwrapEvolutionBody(parsed: Record<string, unknown>): Record<string, un
 }
 
 /**
- * Documentação Evolution 2.1.1: QR em GET /instance/connect/{instance}
- * (não GET /instance/qrcode/... — essa rota costuma devolver 404 nas builds atuais).
+ * PNG / data URI — mesmo critério que evolution-qr-live (evita tratar token Baileys curto como imagem).
+ */
+function asImagePayload(s: string | undefined): string | undefined {
+  if (!s) return undefined;
+  if (s.startsWith("data:image")) return s;
+  if (s.length >= 800) return s;
+  return undefined;
+}
+
+function toDataUri(raw: string): string {
+  if (raw.startsWith("data:")) return raw;
+  const stripped = raw.replace(/^data:image\/\w+;base64,/, "");
+  return `data:image/png;base64,${stripped}`;
+}
+
+/**
+ * Documentação Evolution 2.1.1: QR em GET /instance/connect/{instance}.
+ * Varre objeto plano + `instance` aninhado (como scripts locais).
  */
 function pickQrForClient(data: Record<string, unknown>): string | null {
   const asString = (v: unknown): string | undefined =>
     typeof v === "string" && v.length > 0 ? v : undefined;
 
-  const toDataUri = (raw: string): string => {
-    if (raw.startsWith("data:")) return raw;
-    const stripped = raw.replace(/^data:image\/\w+;base64,/, "");
-    return `data:image/png;base64,${stripped}`;
+  const fromFlat = (obj: Record<string, unknown>): string | null => {
+    const base64 = asString(obj["base64"]);
+    if (base64) return toDataUri(base64);
+
+    const nested = obj["qrcode"];
+    if (nested && typeof nested === "object" && nested !== null) {
+      const n = nested as Record<string, unknown>;
+      const img =
+        asImagePayload(asString(n["base64"])) ??
+        asImagePayload(asString(n["qrcode"])) ??
+        asImagePayload(asString(n["code"]));
+      if (img) return img.startsWith("data:") ? img : toDataUri(img);
+      const nb = asString(n["base64"]);
+      if (nb) return toDataUri(nb);
+      const pairN = asString(n["pairingCode"]);
+      if (pairN) return pairN;
+    }
+
+    const imgTop =
+      asImagePayload(asString(obj["qrcode"])) ??
+      asImagePayload(asString(obj["code"]));
+    if (imgTop) return imgTop.startsWith("data:") ? imgTop : toDataUri(imgTop);
+
+    const code = asString(obj["code"]);
+    if (code?.startsWith("2@")) return code;
+    if (code && /^[A-Z0-9]{6,16}$/i.test(code)) return code;
+
+    const pairing = asString(obj["pairingCode"]);
+    if (pairing) return pairing;
+
+    return null;
   };
 
-  const base64 = asString(data["base64"]);
-  if (base64) return toDataUri(base64);
-
-  const nested = data["qrcode"];
-  if (nested && typeof nested === "object" && nested !== null) {
-    const n = nested as Record<string, unknown>;
-    const b = asString(n["base64"]) ?? asString(n["code"]);
-    if (b) {
-      if (b.startsWith("data:") || b.length >= 800) return toDataUri(b);
+  const walk = (obj: Record<string, unknown>): string | null => {
+    const got = fromFlat(obj);
+    if (got) return got;
+    const inst = obj["instance"];
+    if (inst && typeof inst === "object" && inst !== null) {
+      return walk(inst as Record<string, unknown>);
     }
+    return null;
+  };
+
+  return walk(data);
+}
+
+function buildConnectUrl(apiUrl: string, instance: string, connectDigits: string): string {
+  const path = `${apiUrl}/instance/connect/${encodeURIComponent(instance)}`;
+  if (connectDigits.length >= 10) return `${path}?number=${encodeURIComponent(connectDigits)}`;
+  return path;
+}
+
+async function fetchConnectBody(
+  apiUrl: string,
+  apiKey: string,
+  instance: string,
+  connectDigits: string,
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; status: number }> {
+  const res = await fetch(buildConnectUrl(apiUrl, instance, connectDigits), {
+    headers: { apikey: apiKey },
+    signal:  AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  const raw = (await res.json()) as Record<string, unknown>;
+  return { ok: true, data: unwrapEvolutionBody(raw) };
+}
+
+/** Rajadas + restart: Evolution muitas vezes devolve 200 com corpo vazio até estabilizar (v2.1.1). */
+async function obtainQrcodeWithRetries(opts: {
+  apiUrl: string;
+  apiKey: string;
+  instance: string;
+  connectDigits: string;
+}): Promise<
+  | { qrcode: string; lastBody: Record<string, unknown> }
+  | { failConnect: number }
+  | { empty: true; lastBody: Record<string, unknown> | null; topLevelKeys: string[] }
+> {
+  const { apiUrl, apiKey, instance, connectDigits } = opts;
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  let lastBody: Record<string, unknown> | null = null;
+  for (let i = 0; i < 4; i++) {
+    if (i > 0) await sleep(1500);
+    const step = await fetchConnectBody(apiUrl, apiKey, instance, connectDigits);
+    if (!step.ok) return { failConnect: step.status };
+    lastBody = step.data;
+    const qrcode = pickQrForClient(step.data);
+    if (qrcode) return { qrcode, lastBody: step.data };
   }
 
-  const code = asString(data["code"]);
-  if (code && (code.startsWith("data:") || code.length >= 800)) return toDataUri(code);
+  await fetch(`${apiUrl}/instance/restart/${encodeURIComponent(instance)}`, {
+    method:  "POST",
+    headers: { apikey: apiKey },
+    signal:  AbortSignal.timeout(20_000),
+  }).catch(() => null);
 
-  const pairing = asString(data["pairingCode"]);
-  if (pairing) return pairing;
+  await sleep(3500);
 
-  return null;
+  for (let i = 0; i < 3; i++) {
+    if (i > 0) await sleep(1500);
+    const step = await fetchConnectBody(apiUrl, apiKey, instance, connectDigits);
+    if (!step.ok) return { failConnect: step.status };
+    lastBody = step.data;
+    const qrcode = pickQrForClient(step.data);
+    if (qrcode) return { qrcode, lastBody: step.data };
+  }
+
+  const keys = lastBody ? Object.keys(lastBody).slice(0, 24) : [];
+  return { empty: true, lastBody, topLevelKeys: keys };
 }
 
 /** Resposta 502 com diagnóstico: compara connect 404 com fetchInstances no mesmo host/chave. */
@@ -188,8 +299,9 @@ export async function GET() {
             { headers: { apikey: apiKey }, signal: AbortSignal.timeout(4000) },
           );
           if (res.ok) {
-            const data = await res.json() as { instance?: { state?: string } };
-            state = data.instance?.state ?? "close";
+            const raw = await res.json() as unknown;
+            const st = parseEvolutionConnectionStateJson(raw);
+            state = st.length > 0 ? st : "close";
           }
         } catch {
           state = "error";
@@ -224,7 +336,7 @@ export async function POST(req: NextRequest) {
   }
 
   const config = (integration.config ?? {}) as Record<string, string>;
-  const { apiUrl, apiKey, instance } = evolutionConnectionParams(config);
+  const { apiUrl, apiKey, instance, connectDigits } = evolutionConnectionParams(config);
 
   if (!apiUrl || !instance) {
     return NextResponse.json({ error: "Instancia nao configurada" }, { status: 400 });
@@ -250,35 +362,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // QR oficial v2.1.1: GET /instance/connect/{instance}
-    const res = await fetch(`${apiUrl}/instance/connect/${encodeURIComponent(instance)}`, {
-      headers: { apikey: apiKey },
-      signal:  AbortSignal.timeout(8000),
+    const obtained = await obtainQrcodeWithRetries({
+      apiUrl,
+      apiKey,
+      instance,
+      connectDigits,
     });
 
-    if (!res.ok) {
+    if ("failConnect" in obtained) {
       return await evolutionConnectFailureResponse({
-        status: res.status,
+        status: obtained.failConnect,
         apiUrl,
         apiKey,
         instance,
       });
     }
 
-    const raw = (await res.json()) as Record<string, unknown>;
-    const data = unwrapEvolutionBody(raw);
-    const qrcode = pickQrForClient(data);
-    if (!qrcode) {
+    if ("empty" in obtained) {
+      const hint =
+        connectDigits.length < 10
+          ? " Dica: defina EVOLUTION_CONNECT_NUMBER (DDI+DDD+número, só dígitos) no flowos-web ou connectNumber na integração — algumas builds Evolution só devolvem QR com ?number=."
+          : "";
       return NextResponse.json(
         {
-          error:            "QR Code nao disponivel — tente em alguns segundos",
+          error:            `QR Code nao disponivel após várias tentativas.${hint}`,
           evolutionQrFlow:  EVOLUTION_QR_FLOW,
+          diagnostic: {
+            connectRetriesExhausted: true,
+            responseKeysHint:        obtained.topLevelKeys,
+            usedNumberParam:         connectDigits.length >= 10,
+          },
         },
         { status: 202 },
       );
     }
 
-    const out = NextResponse.json({ qrcode, evolutionQrFlow: EVOLUTION_QR_FLOW });
+    const out = NextResponse.json({
+      qrcode:          obtained.qrcode,
+      evolutionQrFlow: EVOLUTION_QR_FLOW,
+    });
     out.headers.set("X-FlowOS-Evolution-QR-Flow", EVOLUTION_QR_FLOW);
     return out;
   } catch (e) {

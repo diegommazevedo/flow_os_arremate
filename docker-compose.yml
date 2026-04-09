@@ -87,9 +87,10 @@ services:
       DATABASE_URL: postgresql://flowos:${POSTGRES_PASSWORD:-flowos_dev}@postgres:5432/flowos_prod
       REDIS_URL: redis://redis:6379
 
-  # Produção no Railway: espelhar estes envs em serviço Docker separado — ver infra/railway/evolution.env.example
+  # Produção no Railway: espelhar estes envs — ver infra/railway/evolution.env.example
+  # v2.2.3: bug documentado em /instance/connect (só { count }, sem QR). Usar tag explícita.
   evolution-api:
-    image: atendai/evolution-api:v2.2.3
+    image: atendai/evolution-api:v2.1.1
     container_name: flow_os-evolution-1
     restart: unless-stopped
     ports:

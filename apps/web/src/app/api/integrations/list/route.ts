@@ -14,7 +14,7 @@ export async function GET() {
   const integrations = await db.workspaceIntegration.findMany({
     where:  { workspaceId: session.workspaceId, status: "ACTIVE" },
     select: { id: true, name: true, type: true, status: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
   });
 
   return NextResponse.json({ integrations });
