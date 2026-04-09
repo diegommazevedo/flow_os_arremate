@@ -11,7 +11,7 @@ export {
 
 /** Marca da rota de QR no FlowOS (confirmar deploy / troubleshooting). */
 /** Incrementar quando mudar a estratégia de QR (confirmar deploy via resposta JSON). */
-export const EVOLUTION_QR_FLOW = "connect-v2.1.2-retries" as const;
+export const EVOLUTION_QR_FLOW = "connect-v2.1.3-logout-preflight" as const;
 
 /**
  * Base URL da REST Evolution (host raiz). Não usar URL do manager (/manager) nem barra final.

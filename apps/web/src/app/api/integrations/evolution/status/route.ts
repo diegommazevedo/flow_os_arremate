@@ -157,6 +157,22 @@ async function fetchConnectBody(
   return { ok: true, data: unwrapEvolutionBody(raw) };
 }
 
+/**
+ * OpenAPI v2: `DELETE /instance/logout/{instance}` — limpa credenciais/sessão pendente.
+ * Mitiga respostas só `{"count":0}` sem `base64`/`code` (loop de reconnect antes do QR em algumas builds Evolution).
+ */
+async function evolutionLogoutForPairing(
+  apiUrl: string,
+  apiKey: string,
+  instance: string,
+): Promise<void> {
+  await fetch(`${apiUrl}/instance/logout/${encodeURIComponent(instance)}`, {
+    method:  "DELETE",
+    headers: { apikey: apiKey },
+    signal:  AbortSignal.timeout(20_000),
+  }).catch(() => null);
+}
+
 /** Rajadas + restart: Evolution muitas vezes devolve 200 com corpo vazio até estabilizar (v2.1.1). */
 async function obtainQrcodeWithRetries(opts: {
   apiUrl: string;
@@ -172,6 +188,9 @@ async function obtainQrcodeWithRetries(opts: {
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+  await evolutionLogoutForPairing(apiUrl, apiKey, instance);
+  await sleep(2500);
+
   let lastBody: Record<string, unknown> | null = null;
   for (let i = 0; i < 4; i++) {
     if (i > 0) await sleep(1500);
@@ -181,6 +200,9 @@ async function obtainQrcodeWithRetries(opts: {
     const qrcode = pickQrForClient(step.data);
     if (qrcode) return { qrcode, lastBody: step.data };
   }
+
+  await evolutionLogoutForPairing(apiUrl, apiKey, instance);
+  await sleep(2000);
 
   await fetch(`${apiUrl}/instance/restart/${encodeURIComponent(instance)}`, {
     method:  "POST",

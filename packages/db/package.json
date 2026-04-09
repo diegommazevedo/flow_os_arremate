@@ -12,6 +12,7 @@
     "setup": "prisma db push && tsx --tsconfig tsconfig.json prisma/setup.ts",
     "studio": "prisma studio",
     "seed": "tsx --tsconfig tsconfig.json prisma/seed.ts",
+    "seed:arremate": "tsx seeds/arremate-config.ts",
     "migrate:pipedrive": "tsx --tsconfig tsconfig.json scripts/migrate-pipedrive.ts",
     "typecheck": "tsc --noEmit"
   },

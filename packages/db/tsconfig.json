@@ -7,6 +7,6 @@
     "outDir": "./dist",
     "rootDir": "./"
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts", "scripts/**/*.ts"],
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "scripts/**/*.ts", "seeds/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
