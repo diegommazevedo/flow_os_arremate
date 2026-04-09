@@ -34,3 +34,9 @@ backups/
 .DS_Store
 Thumbs.db
 
+# Accidental / local ops (não versionar)
+*pcover_b64.txt
+tmp/
+scripts/_truncate-*
+seed-prod.mjs
+
