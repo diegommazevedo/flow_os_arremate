@@ -8,6 +8,7 @@ import { defaultSanitizer } from "@flow-os/core";
 import { getSessionContext } from "@/lib/session";
 import { appendAuditLog } from "@/lib/chatguru-api";
 import { encrypt } from "@/lib/encrypt";
+import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
 
 const Schema = z.object({
   name:               z.string().min(1).max(120).optional(),
@@ -51,9 +52,13 @@ export async function PUT(
   if (parsed.data.appSecret)          configPatch["appSecret"]          = encrypt(parsed.data.appSecret);
   if (parsed.data.webhookVerifyToken) configPatch["webhookVerifyToken"] = encrypt(parsed.data.webhookVerifyToken);
   if (parsed.data.autoReply !== undefined) configPatch["autoReply"]     = parsed.data.autoReply;
-  if (parsed.data.apiUrl)             configPatch["apiUrl"]             = defaultSanitizer.clean(parsed.data.apiUrl);
+  if (parsed.data.apiUrl) {
+    configPatch["apiUrl"] = normalizeEvolutionApiBaseUrl(defaultSanitizer.clean(parsed.data.apiUrl));
+  }
   if (parsed.data.apiKey)             configPatch["apiKey"]             = encrypt(parsed.data.apiKey);
-  if (parsed.data.instanceName)       configPatch["instanceName"]       = defaultSanitizer.clean(parsed.data.instanceName);
+  if (parsed.data.instanceName) {
+    configPatch["instanceName"] = defaultSanitizer.clean(parsed.data.instanceName).trim();
+  }
 
   const updateData: Record<string, unknown> = { config: configPatch as Prisma.InputJsonObject };
   if (parsed.data.name)   updateData["name"]   = defaultSanitizer.clean(parsed.data.name);

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@flow-os/db";
 import { getSessionContext } from "@/lib/session";
 import { decrypt } from "@/lib/encrypt";
+import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
 
 export async function POST(
   _req: NextRequest,
@@ -42,11 +43,11 @@ export async function POST(
       return NextResponse.json({ ok: true, phone: data.display_phone_number });
 
     } else if (integration.type === "WHATSAPP_EVOLUTION") {
-      const apiUrl  = config["apiUrl"] ?? "";
+      const apiUrl  = normalizeEvolutionApiBaseUrl(config["apiUrl"] ?? "");
       const apiKey  = decrypt(config["apiKey"] ?? "");
-      const instance = config["instanceName"] ?? "";
+      const instance = (config["instanceName"] ?? "").trim();
       const res = await fetch(
-        `${apiUrl}/instance/connectionState/${instance}`,
+        `${apiUrl}/instance/connectionState/${encodeURIComponent(instance)}`,
         { headers: { apikey: apiKey }, signal: AbortSignal.timeout(5000) },
       );
       if (!res.ok) {

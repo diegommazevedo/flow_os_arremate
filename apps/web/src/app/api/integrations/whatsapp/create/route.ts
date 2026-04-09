@@ -8,6 +8,7 @@ import { defaultSanitizer } from "@flow-os/core";
 import { getSessionContext } from "@/lib/session";
 import { appendAuditLog } from "@/lib/chatguru-api";
 import { encrypt } from "@/lib/encrypt";
+import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
 
 const MetaSchema = z.object({
   type:               z.literal("WHATSAPP_META"),
@@ -53,9 +54,9 @@ export async function POST(req: NextRequest) {
     };
   } else {
     config = {
-      apiUrl:       defaultSanitizer.clean(parsed.data.apiUrl),
+      apiUrl:       normalizeEvolutionApiBaseUrl(defaultSanitizer.clean(parsed.data.apiUrl)),
       apiKey:       encrypt(parsed.data.apiKey),
-      instanceName: defaultSanitizer.clean(parsed.data.instanceName),
+      instanceName: defaultSanitizer.clean(parsed.data.instanceName).trim(),
     };
   }
 

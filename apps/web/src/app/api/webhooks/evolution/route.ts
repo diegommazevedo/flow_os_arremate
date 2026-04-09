@@ -16,6 +16,7 @@ import {
   fetchEvolutionMediaBuffer,
   type EvolutionMediaKind,
 } from "@/lib/evolution-fetch-media";
+import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
 
 type Quadrant = "Q1_DO" | "Q2_PLAN" | "Q3_DELEGATE" | "Q4_ELIMINATE";
 
@@ -77,12 +78,12 @@ function textFromEvolutionMessage(msg: Record<string, unknown> | undefined): str
 }
 
 function evolutionHttpCtx(config: Record<string, string>): { baseUrl: string; apiKey: string } {
-  const baseUrl = (
+  const baseUrl = normalizeEvolutionApiBaseUrl(
     config["apiUrl"] ||
-    config["EVOLUTION_API_URL"] ||
-    process.env["EVOLUTION_API_URL"] ||
-    "http://localhost:8080"
-  ).replace(/\/$/, "");
+      config["EVOLUTION_API_URL"] ||
+      process.env["EVOLUTION_API_URL"] ||
+      "http://localhost:8080",
+  );
   const apiKey = config["apiKey"]
     ? (() => {
         try {

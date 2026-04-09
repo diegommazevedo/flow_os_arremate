@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@flow-os/db";
 import { decrypt } from "@/lib/encrypt";
+import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
 import { getSessionContext } from "@/lib/session";
 
 const Body = z.object({
@@ -41,7 +42,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const config   = (integration.config ?? {}) as Record<string, string>;
-  const apiUrl   = config["apiUrl"] ?? process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080";
+  const apiUrl   = normalizeEvolutionApiBaseUrl(
+    config["apiUrl"] ?? process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080",
+  );
   const apiKey   = config["apiKey"] ? decrypt(config["apiKey"]) : (process.env["EVOLUTION_API_KEY"] ?? "");
   const instance = config["instanceName"] ?? "";
 

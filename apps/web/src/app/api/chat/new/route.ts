@@ -17,7 +17,11 @@ import { db } from "@flow-os/db";
 import { defaultSanitizer } from "@flow-os/core";
 import { getSessionContext } from "@/lib/session";
 import { decrypt } from "@/lib/encrypt";
-import { ensureInstanceOpen, normalizeInstancesPayload } from "@/lib/evolution";
+import {
+  ensureInstanceOpen,
+  normalizeEvolutionApiBaseUrl,
+  normalizeInstancesPayload,
+} from "@/lib/evolution";
 
 const Body = z.object({
   phone:          z.string().min(8).max(20),
@@ -47,7 +51,9 @@ async function loadEvolutionCtx(workspaceId: string): Promise<EvolutionCtx> {
 
   if (integration) {
     const config = (integration.config ?? {}) as Record<string, string>;
-    const apiUrl = config["apiUrl"] || process.env["EVOLUTION_API_URL"] || "http://localhost:8080";
+    const apiUrl = normalizeEvolutionApiBaseUrl(
+      config["apiUrl"] || process.env["EVOLUTION_API_URL"] || "http://localhost:8080",
+    );
     const apiKey = config["apiKey"] ? decrypt(config["apiKey"]) : (process.env["EVOLUTION_API_KEY"] ?? "");
     const inst = config["instanceName"] ?? config["EVOLUTION_INSTANCE_NAME"] ?? "";
     return {
@@ -59,7 +65,9 @@ async function loadEvolutionCtx(workspaceId: string): Promise<EvolutionCtx> {
 
   const envInst = process.env["EVOLUTION_INSTANCE_NAME"];
   return {
-    apiUrl: process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080",
+    apiUrl: normalizeEvolutionApiBaseUrl(
+      process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080",
+    ),
     apiKey: process.env["EVOLUTION_API_KEY"] ?? "",
     configInstance: envInst && envInst.length > 0 ? envInst : undefined,
   };
