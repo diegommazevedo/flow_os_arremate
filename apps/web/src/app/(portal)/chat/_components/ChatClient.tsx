@@ -12,6 +12,17 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatFilters, DEFAULT_FILTERS, applyFilters, type Filters } from "./ChatFilters";
 import { ProtocolModal } from "@/components/protocol-modal";
 
+/** Preview na lista — remove *negrito*, _itá_, ~riscado~ e blocos de código WhatsApp. */
+function stripWAMarkdown(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/~([^~]+)~/g, "$1")
+    .replace(/```[\s\S]*?```/g, "[código]")
+    .trim();
+}
+
 // ─── Constantes de status ─────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; cor: string }> = {
@@ -271,7 +282,7 @@ function ConvRow({
                     ✓
                   </span>
                 )}
-                {conv.lastMessage}
+                {stripWAMarkdown(conv.lastMessage)}
               </p>
             )}
             <div className="flex items-center gap-1 mt-0.5 flex-wrap">
@@ -1000,7 +1011,7 @@ function NewConvModal({
   onCreated,
 }: {
   onClose:   () => void;
-  onCreated: (taskId: string, name: string, phone: string) => void;
+  onCreated: (taskId: string, name: string, phone: string, lastMessage: string) => void;
 }) {
   const [phone,   setPhone]   = useState("");
   const [name,    setName]    = useState("");
@@ -1020,7 +1031,7 @@ function NewConvModal({
       });
       const d = await r.json() as { taskId?: string; name?: string; phone?: string; error?: string };
       if (!r.ok) throw new Error(d.error ?? "Erro ao criar conversa");
-      onCreated(d.taskId!, d.name ?? phone, d.phone ?? phone);
+      onCreated(d.taskId!, d.name ?? phone, d.phone ?? phone, message.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro desconhecido");
     } finally {
@@ -1180,6 +1191,26 @@ export function ChatClient({ initial, workspaceId }: Props) {
 
   const handleMessageSent = useCallback((msg: ChatMessage) => {
     setHistory(prev => [...prev, msg]);
+    const textPreview = stripWAMarkdown(
+      msg.text?.trim() ||
+        (msg.media ? `[${msg.media.kind === "IMAGE" ? "foto" : msg.media.kind === "VIDEO" ? "vídeo" : msg.media.kind === "AUDIO" ? "áudio" : "doc"}]` : ""),
+    );
+    const lastMessage = textPreview || (msg.media ? "Mídia" : "");
+    if (!lastMessage) return;
+    setConversations(prev =>
+      prev.map(c =>
+        c.id === activeIdRef.current
+          ? {
+              ...c,
+              lastMessage,
+              lastAt: Date.now(),
+              ...(msg.direction === "OUT"
+                ? { lastMessageFromMe: true, lastMessageRead: false }
+                : {}),
+            }
+          : c,
+      ),
+    );
   }, []);
 
   const handleStatusChange = useCallback((status: string) => {
@@ -1194,8 +1225,9 @@ export function ChatClient({ initial, workspaceId }: Props) {
     );
   }, [activeId]);
 
-  const handleNewConvCreated = useCallback((taskId: string, name: string, phone: string) => {
+  const handleNewConvCreated = useCallback((taskId: string, name: string, phone: string, sentMessage: string) => {
     setShowNewConv(false);
+    const preview = stripWAMarkdown(sentMessage.trim()) || "Mensagem enviada";
     const newConv: Conversation = {
       id:             taskId,
       dealId:         null,
@@ -1208,7 +1240,7 @@ export function ChatClient({ initial, workspaceId }: Props) {
       contactPhone:   phone,
       channel:        "WA",
       roomId:         null,
-      lastMessage:    "Mensagem enviada",
+      lastMessage:    preview,
       lastAt:         Date.now(),
       unread:         false,
       unreadCount:    0,
