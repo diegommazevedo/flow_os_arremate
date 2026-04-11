@@ -5,7 +5,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { db, InternalMessageType, ProtocolChannel, type EisenhowerQuadrant } from "@flow-os/db";
 import { defaultSanitizer } from "@flow-os/core";
 import { generateProtocol } from "@flow-os/brain/lib/protocol-generator";
-import { UF_DEPARTMENT_MAP } from "@flow-os/templates";
+import { computeDueAt, PIPELINE_MASTER_CONFIG, UF_DEPARTMENT_MAP } from "@flow-os/templates";
 import { appendAuditLog } from "@/lib/chatguru-api";
 import { publishInternalEvent, publishKanbanEvent } from "@/lib/sse-bus";
 import { decrypt } from "@/lib/encrypt";
@@ -193,7 +193,7 @@ async function isAlreadyProcessed(workspaceId: string, messageId: string): Promi
   return Boolean(existing);
 }
 
-// Cache em memória — evita seq scan em workspace_integrations a cada webhook
+// Cache em memória - evita seq scan em workspace_integrations a cada webhook
 const integrationCache = new Map<string, {
   data: { workspaceId: string; config: unknown } | null;
   expiresAt: number;
@@ -332,6 +332,14 @@ async function resolveOrCreateDeal(
 
   if (!firstStage) throw new Error("Workspace sem stages configurados");
 
+  const enteredAt = new Date();
+  const triagemStage = PIPELINE_MASTER_CONFIG.stages.find((stage) => stage.id === "triagem");
+  const { dueAt, basis } = computeDueAt({
+    stageId: "triagem",
+    enteredAt,
+    stage: triagemStage ?? null,
+  });
+
   const created = await db.deal.create({
     data: {
       workspaceId,
@@ -342,6 +350,10 @@ async function resolveOrCreateDeal(
         eisenhower: "Q2_PLAN",
         kanbanStatus: "inbox",
         currentPhase: "triagem",
+        stageId: "triagem",
+        dueAt: dueAt?.toISOString() ?? null,
+        slaBasis: basis,
+        stageEnteredAt: enteredAt.toISOString(),
         channels: ["WA_EVOLUTION"],
         sourceChannel: "whatsapp_evolution",
       },
@@ -463,7 +475,7 @@ function auditDisplayText(
   return cleanText.slice(0, 500);
 }
 
-/** Evolution envia pushName "@lid" quando não há nome visível — evita título Task/Contact inútil. */
+/** Evolution envia pushName "@lid" quando não há nome visível - evita título Task/Contact inútil. */
 function evolutionParticipantDisplayName(cleanedPushName: string, phoneKey: string): string {
   const n = cleanedPushName.trim();
   if (!n || /^@lid$/i.test(n) || n.toLowerCase() === "whatsapp") {
