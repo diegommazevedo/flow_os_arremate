@@ -3,13 +3,16 @@ import type { AgentPersona, FlowDefinition, SectorTemplate, StageConfig } from "
 import { globalRegistry } from "./engine";
 
 const PIPELINE_STAGE_COLORS = [
+  "#94a3b8",
   "#64748b",
   "#475569",
   "#0f766e",
   "#0ea5e9",
+  "#0891b2",
+  "#14b8a6",
   "#f59e0b",
-  "#8b5cf6",
   "#2563eb",
+  "#8b5cf6",
   "#ec4899",
   "#06b6d4",
   "#14b8a6",
@@ -18,18 +21,21 @@ const PIPELINE_STAGE_COLORS = [
 ] as const;
 
 export const PIPELINE_STAGES = [
-  { id: "triagem",             label: "Triagem",                         order: 1 },
-  { id: "sem_acesso_grupo",    label: "Sem Acesso ao Grupo",             order: 2 },
-  { id: "primeiro_contato",    label: "1º Contato c/ Cliente",           order: 3 },
-  { id: "fgts_contratacao",    label: "FGTS Contratação",                order: 4 },
-  { id: "itbi",                label: "ITBI",                            order: 5 },
-  { id: "escritura",           label: "Escritura Pública Contratação",   order: 6 },
-  { id: "registro",            label: "Registro de Imóveis",             order: 7 },
-  { id: "troca_titularidade",  label: "Troca de Titularidade",           order: 8 },
-  { id: "envio_docs_cef",      label: "Envio Docs para CEF",             order: 9 },
-  { id: "docs_aguardando_cef", label: "Docs Enviados / Aguardando CEF",  order: 10 },
-  { id: "emissao_nf",          label: "Emissão NF",                      order: 11 },
-  { id: "processo_concluido",  label: "Processo Concluído",              order: 12 },
+  { id: "captado",                      label: "Captado",                         order: 1 },
+  { id: "triagem",                      label: "Triagem",                         order: 2 },
+  { id: "sem_acesso_grupo",             label: "Sem Acesso ao Grupo",             order: 3 },
+  { id: "primeiro_contato",             label: "1º Contato c/ Cliente",           order: 4 },
+  { id: "fgts_contratacao",             label: "FGTS Contratação",                order: 5 },
+  { id: "aguardando_confirmacao_caixa", label: "Aguardando Confirmação Caixa",    order: 6 },
+  { id: "boleto_pago_gate",             label: "Boleto Pago (Gate)",              order: 7 },
+  { id: "itbi",                         label: "ITBI",                            order: 8 },
+  { id: "registro",                     label: "Registro de Imóveis",             order: 9 },
+  { id: "escritura",                    label: "Escritura Pública Contratação",   order: 10 },
+  { id: "troca_titularidade",           label: "Troca de Titularidade",           order: 11 },
+  { id: "envio_docs_cef",               label: "Envio Docs para CEF",             order: 12 },
+  { id: "docs_aguardando_cef",          label: "Docs Enviados / Aguardando CEF",  order: 13 },
+  { id: "emissao_nf",                   label: "Emissão NF",                      order: 14 },
+  { id: "processo_concluido",           label: "Processo Concluído",              order: 15 },
 ] as const;
 
 export const COND_STATUS_VALUES = [
@@ -113,11 +119,93 @@ const BOLETO_STATUS_VALUES = ["PENDENTE", "PAGO", "VENCIDO", "AGUARDANDO"] as co
 const EXECUTOR_VALUES = ["Caixa", "Cliente", "Escritório"] as const;
 const STATUS_PARALELO_VALUES = ["Não iniciado", "Em andamento", "Finalizado", "Pendente"] as const;
 
+/** GAP-01 - CSV Caixa / Pipedrive (opcional, backward-compat). */
+const CAIXA_SERVICO_VALUES = ["Intermediação", "Assessoramento"] as const;
+const AVERBACAO_CAIXA_VALUES = ["Averbado", "Em tratamento", "A realizar"] as const;
+
 export type EtapaId = (typeof PIPELINE_STAGES)[number]["id"];
 export type FaseId = EtapaId;
 export type DealSubtype = (typeof SUBTYPE_VALUES)[number];
 export type FaseStatus = (typeof STATUS_PARALELO_VALUES)[number];
 export type AverbacaoStatus = (typeof STATUS_PARALELO_VALUES)[number];
+export type StageId = EtapaId;
+
+export const OWNER_GROUPS = [
+  "captacao",
+  "operacoes",
+  "atendimento",
+  "contrato",
+  "financeiro",
+  "itbi",
+  "registro",
+  "juridico",
+] as const;
+
+export type OwnerGroup = (typeof OWNER_GROUPS)[number];
+
+export const EXCEPTION_TYPE_VALUES = [
+  "NO_RESPONSE",
+  "DISSATISFIED",
+  "DOC_PENDING",
+  "EXTERNAL_PENDING",
+  "CHANNEL_CONTINGENCY",
+  "UNSUCCESSFUL_CLOSE",
+] as const;
+
+export type ExceptionType = (typeof EXCEPTION_TYPE_VALUES)[number];
+
+export const EXCEPTION_TYPES = {
+  NO_RESPONSE: "NO_RESPONSE",
+  DISSATISFIED: "DISSATISFIED",
+  DOC_PENDING: "DOC_PENDING",
+  EXTERNAL_PENDING: "EXTERNAL_PENDING",
+  CHANNEL_CONTINGENCY: "CHANNEL_CONTINGENCY",
+  UNSUCCESSFUL_CLOSE: "UNSUCCESSFUL_CLOSE",
+} as const;
+
+export interface PipelineMasterStage {
+  id: StageId;
+  label: string;
+  order: number;
+  ownerGroup: OwnerGroup;
+  slaHours?: number;
+  slaBusinessDays?: number;
+  entryTrigger: string;
+  exitCriteria: string;
+  isGate?: boolean;
+}
+
+export interface PipelineMasterConfig {
+  id: "arrematador-master";
+  stages: readonly PipelineMasterStage[];
+}
+
+export function hasExclusiveSlaPolicy(stage: PipelineMasterStage): boolean {
+  const hasHours = typeof stage.slaHours === "number";
+  const hasBusinessDays = typeof stage.slaBusinessDays === "number";
+  return hasHours !== hasBusinessDays;
+}
+
+export const PIPELINE_MASTER_CONFIG: PipelineMasterConfig = {
+  id: "arrematador-master",
+  stages: [
+    { id: "captado", label: "Captado", order: 1, ownerGroup: "captacao", slaHours: 4, entryTrigger: "deal.created", exitCriteria: "deal.validated" },
+    { id: "triagem", label: "Triagem", order: 2, ownerGroup: "operacoes", slaHours: 8, entryTrigger: "deal.validated", exitCriteria: "deal.classified" },
+    { id: "sem_acesso_grupo", label: "Sem Acesso ao Grupo", order: 3, ownerGroup: "operacoes", slaHours: 24, entryTrigger: "deal.access_pending", exitCriteria: "deal.access_recovered" },
+    { id: "primeiro_contato", label: "1º Contato c/ Cliente", order: 4, ownerGroup: "atendimento", slaHours: 24, entryTrigger: "client.reached", exitCriteria: "client.interest_confirmed" },
+    { id: "fgts_contratacao", label: "FGTS Contratação", order: 5, ownerGroup: "contrato", slaHours: 48, entryTrigger: "client.interest_confirmed", exitCriteria: "contract.signed" },
+    { id: "aguardando_confirmacao_caixa", label: "Aguardando Confirmação Caixa", order: 6, ownerGroup: "operacoes", slaHours: 48, entryTrigger: "contract.signed", exitCriteria: "status.boleto_pago" },
+    { id: "boleto_pago_gate", label: "Boleto Pago (Gate)", order: 7, ownerGroup: "financeiro", slaHours: 2, isGate: true, entryTrigger: "status.boleto_pago", exitCriteria: "onboarding.created" },
+    { id: "itbi", label: "ITBI", order: 8, ownerGroup: "itbi", slaBusinessDays: 5, entryTrigger: "onboarding.completed", exitCriteria: "itbi.completed" },
+    { id: "registro", label: "Registro de Imóveis", order: 9, ownerGroup: "registro", slaBusinessDays: 10, entryTrigger: "itbi.completed", exitCriteria: "registro.completed" },
+    { id: "escritura", label: "Escritura Pública Contratação", order: 10, ownerGroup: "contrato", slaBusinessDays: 5, entryTrigger: "registro.completed", exitCriteria: "escritura.completed" },
+    { id: "troca_titularidade", label: "Troca de Titularidade", order: 11, ownerGroup: "juridico", slaBusinessDays: 5, entryTrigger: "escritura.completed", exitCriteria: "titularidade.completed" },
+    { id: "envio_docs_cef", label: "Envio Docs para CEF", order: 12, ownerGroup: "operacoes", slaHours: 24, entryTrigger: "titularidade.completed", exitCriteria: "docs.enviados" },
+    { id: "docs_aguardando_cef", label: "Docs Enviados / Aguardando CEF", order: 13, ownerGroup: "operacoes", slaBusinessDays: 7, entryTrigger: "docs.enviados", exitCriteria: "cef.returned" },
+    { id: "emissao_nf", label: "Emissão NF", order: 14, ownerGroup: "financeiro", slaHours: 48, entryTrigger: "cef.returned", exitCriteria: "nf.emitted" },
+    { id: "processo_concluido", label: "Processo Concluído", order: 15, ownerGroup: "operacoes", slaHours: 4, entryTrigger: "nf.emitted", exitCriteria: "process.completed" },
+  ],
+};
 
 const LeiloesSchema = z.object({
   responsavel: z.string().optional(),
@@ -187,6 +275,18 @@ const IptuStatusSchema = z.object({
   dataTermino: z.string().optional(),
 });
 
+const LeiloeiroCaixaSchema = z.object({
+  nome: z.string(),
+  telefone: z.string().optional(),
+  email: z.union([z.string().email(), z.literal("")]).optional(),
+});
+
+const CorretorCaixaSchema = z.object({
+  cpfCnpj: z.string(),
+  creci: z.string().optional(),
+  nome: z.string(),
+});
+
 export const RealEstateCaixaMetaSchema = z.object({
   imovelId: z.string(),
   chb: z.string().optional(),
@@ -218,12 +318,30 @@ export const RealEstateCaixaMetaSchema = z.object({
   corretorNome: z.string().optional(),
   iptu: z.string().optional(),
   contrato: z.string().optional(),
-  servico: z.string().optional(),
+  /** GAP-01 / GAP-05 - informativo; valores canônicos ou string legada. */
+  servico: z.union([z.enum(CAIXA_SERVICO_VALUES), z.string()]).optional(),
+
+  /** GAP-01 - campo "Imovel" do CSV Caixa. */
+  codigoImovelCaixa: z.string().optional(),
+  /** GAP-01 / GAP-02 - deadline externo Caixa (ISO). */
+  limiteBoletoPagamento: z.string().optional(),
+  /** GAP-01 - situação de averbação no CSV. */
+  averbacao: z.enum(AVERBACAO_CAIXA_VALUES).optional(),
+  valorTotal: z.number().optional(),
+  leiloeiro: LeiloeiroCaixaSchema.optional(),
+  corretor: CorretorCaixaSchema.optional(),
 
   paymentDeadline: z.string().optional(),
   boletoStatus: z.enum(BOLETO_STATUS_VALUES).optional(),
 
   currentPhase: z.string().optional(),
+  stageId: z.enum(PIPELINE_STAGES.map((stage) => stage.id) as [EtapaId, ...EtapaId[]]).optional(),
+  pipelineId: z.string().optional(),
+  ownerGroup: z.enum(OWNER_GROUPS).optional(),
+  dueAt: z.string().optional(),
+  slaBreached: z.boolean().optional(),
+  exceptionType: z.enum(EXCEPTION_TYPE_VALUES).optional(),
+  evidences: z.record(z.string(), z.string()).optional(),
   kanbanStatus: z.string().optional(),
   eisenhower: z.string().optional(),
   stagnatedDays: z.number().optional(),
@@ -517,6 +635,7 @@ const AGENT_PERSONA: AgentPersona = {
 
 export interface FlowTemplate extends SectorTemplate {
   pipelineStages: typeof PIPELINE_STAGES;
+  pipelineMasterConfig: PipelineMasterConfig;
   phaseDefinitions: Record<EtapaId, PhaseDefinition>;
   getPhasesForSubtype: (subtype: DealSubtype) => PhaseDefinition[];
   condStatusValues: readonly string[];
@@ -550,6 +669,7 @@ export const RealEstateCaixaTemplate: FlowTemplate = {
     flow: EXTENDED_LABELS.flow,
   },
   pipelineStages: PIPELINE_STAGES,
+  pipelineMasterConfig: PIPELINE_MASTER_CONFIG,
   phaseDefinitions: PHASE_DEFINITIONS,
   getPhasesForSubtype,
   condStatusValues: COND_STATUS_VALUES,
