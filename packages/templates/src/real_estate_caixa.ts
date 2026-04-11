@@ -185,6 +185,15 @@ export interface PipelineMasterConfig {
   stages: readonly PipelineMasterStage[];
 }
 
+export const ROLE_PIPELINE_MAP = {
+  atendimento: ["captado", "triagem", "sem_acesso_grupo", "primeiro_contato"],
+  contrato: ["fgts_contratacao", "aguardando_confirmacao_caixa"],
+  financeiro: ["boleto_pago_gate", "emissao_nf", "processo_concluido"],
+  itbi: ["itbi", "registro", "escritura"],
+  registro: ["registro", "escritura", "troca_titularidade"],
+  gestao: [],
+} as const satisfies Record<string, readonly StageId[]>;
+
 export function hasExclusiveSlaPolicy(stage: PipelineMasterStage): boolean {
   const hasHours = typeof stage.slaHours === "number";
   const hasBusinessDays = typeof stage.slaBusinessDays === "number";
