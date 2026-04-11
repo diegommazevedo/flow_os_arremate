@@ -275,6 +275,28 @@ const IptuStatusSchema = z.object({
   dataTermino: z.string().optional(),
 });
 
+const DiligenciaSchema = z.object({
+  status: z.enum(STATUS_PARALELO_VALUES).optional(),
+  solicitadaEm: z.string().optional(),
+  agendadaPara: z.string().optional(),
+  concluidaEm: z.string().optional(),
+  responsavel: z.string().optional(),
+
+  motoboyNome: z.string().optional(),
+  motoboyTelefone: z.string().optional(),
+  grupoWhatsappId: z.string().optional(),
+  grupoWhatsappLink: z.string().optional(),
+
+  enderecoConfirmado: z.boolean().optional(),
+  fotosUrls: z.array(z.string().url()).optional(),
+  videosUrls: z.array(z.string().url()).optional(),
+  observacoes: z.string().optional(),
+
+  scoreRisco: z.number().min(0).max(100).optional(),
+  resumoAnalise: z.string().optional(),
+  analisadaEm: z.string().optional(),
+});
+
 const LeiloeiroCaixaSchema = z.object({
   nome: z.string(),
   telefone: z.string().optional(),
@@ -352,6 +374,7 @@ export const RealEstateCaixaMetaSchema = z.object({
   trocaTitularidade: TrocaTitularidadeSchema.optional(),
   condominio: CondominioSchema.optional(),
   desocupacao: DesocupacaoSchema.optional(),
+  diligencia: DiligenciaSchema.optional(),
   itbi: ItbiSchema.optional(),
   registro: RegistroSchema.optional(),
   iptuStatus: IptuStatusSchema.optional(),
