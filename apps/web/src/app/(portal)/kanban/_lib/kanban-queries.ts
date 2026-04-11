@@ -4,6 +4,8 @@
  */
 
 import { db } from "@flow-os/db";
+import type { Prisma } from "@flow-os/db";
+import type { StageId } from "@flow-os/templates";
 import type { KanbanDeal, KanbanStatus, EisenhowerQ, ChannelBadge } from "../_components/types";
 
 // ─── Mapeamentos ──────────────────────────────────────────────────────────────
@@ -62,15 +64,6 @@ function metaStr(meta: unknown, ...keys: string[]): string {
   return "";
 }
 
-function metaNum(meta: unknown, ...keys: string[]): number | null {
-  const m = meta as Record<string, unknown> | null ?? {};
-  for (const k of keys) {
-    const v = Number(m[k]);
-    if (!isNaN(v) && v > 0) return v;
-  }
-  return null;
-}
-
 function resolveQuadrant(meta: unknown, taskQuadrant?: string): EisenhowerQ {
   const fromMeta = metaStr(meta, "eisenhower", "quadrant");
   return QUADRANT_MAP[fromMeta] ?? QUADRANT_MAP[taskQuadrant ?? ""] ?? "Q4";
@@ -102,12 +95,21 @@ function resolveChannels(meta: unknown): ChannelBadge[] {
 
 // ─── Query principal ──────────────────────────────────────────────────────────
 
-export async function getKanbanDeals(workspaceId: string): Promise<KanbanDeal[]> {
+export async function getKanbanDeals(
+  workspaceId: string,
+  options?: { stageIds?: StageId[] },
+): Promise<KanbanDeal[]> {
   // [SEC-03] workspaceId obrigatório
+  const stageFilter: Prisma.DealWhereInput =
+    options?.stageIds && options.stageIds.length > 0
+      ? { OR: options.stageIds.map((stageId) => ({ meta: { path: ["stageId"], equals: stageId } })) }
+      : {};
+
   const deals = await db.deal.findMany({
     where: {
       workspaceId,
       closedAt: null, // apenas deals ativos
+      ...stageFilter,
     },
     include: {
       contact: {
@@ -132,11 +134,15 @@ export async function getKanbanDeals(workspaceId: string): Promise<KanbanDeal[]>
 
     // SLA deadline: meta.paymentDeadline → meta.slaDeadline → task.dueAt → +7d
     const slaMs =
-      metaNum(meta, "paymentDeadlineMs", "slaDeadlineMs") ??
       (() => {
-        const dateStr = metaStr(meta, "paymentDeadline", "slaDeadline", "limiteBoleto");
-        if (dateStr) {
-          const d = new Date(dateStr).getTime();
+        const dueAt = metaStr(meta, "dueAt");
+        if (dueAt) {
+          const d = new Date(dueAt).getTime();
+          if (!isNaN(d)) return d;
+        }
+        const legacy = metaStr(meta, "paymentDeadline", "slaDeadline", "limiteBoleto");
+        if (legacy) {
+          const d = new Date(legacy).getTime();
           if (!isNaN(d)) return d;
         }
         return null;
@@ -145,7 +151,7 @@ export async function getKanbanDeals(workspaceId: string): Promise<KanbanDeal[]>
       Date.now() + 7 * 24 * 3_600_000;
 
     // Fase atual
-    const phase      = metaStr(meta, "currentPhase", "fase", "phase") || "triagem";
+    const phase      = metaStr(meta, "stageId", "currentPhase", "fase", "phase") || "triagem";
     const phaseShort = phase.replace("_", ".").slice(0, 12);
     const phaseColor = PHASE_COLORS[phase] ?? "#6b7280";
 
