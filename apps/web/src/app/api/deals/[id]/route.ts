@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db, Prisma } from "@flow-os/db";
 import { defaultSanitizer } from "@flow-os/core";
-import { PIPELINE_STAGES, type EtapaId } from "@flow-os/templates";
+import { computeDueAt, PIPELINE_STAGES, type EtapaId } from "@flow-os/templates";
 import { getSessionContext } from "@/lib/session";
 
 export async function GET(
@@ -96,6 +96,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Deal não encontrado" }, { status: 404 });
   }
 
+  const prevMetaRaw = (deal.meta ?? {}) as Record<string, unknown>;
+
   const nextMeta: Record<string, Prisma.InputJsonValue | null> = {};
   mergeJsonObject(nextMeta, (deal.meta ?? null) as Prisma.JsonObject | null);
   mergeJsonObject(nextMeta, Object.keys(safeMeta).length > 0 ? (safeMeta as Prisma.InputJsonObject) : null);
@@ -111,6 +113,37 @@ export async function PATCH(
       nextStageId = stage?.id;
     }
     nextMeta["currentPhase"] = parsed.data.currentPhase;
+
+    const newStageId = parsed.data.currentPhase;
+    const oldCanon = typeof prevMetaRaw["stageId"] === "string" ? prevMetaRaw["stageId"] : undefined;
+    const stageChanged = oldCanon !== newStageId;
+
+    if (stageChanged) {
+      const entered = new Date();
+      const limiteMerged =
+        typeof nextMeta["limiteBoletoPagamento"] === "string" && nextMeta["limiteBoletoPagamento"].trim()
+          ? (nextMeta["limiteBoletoPagamento"] as string)
+          : typeof prevMetaRaw["limiteBoletoPagamento"] === "string" &&
+              String(prevMetaRaw["limiteBoletoPagamento"]).trim()
+            ? (prevMetaRaw["limiteBoletoPagamento"] as string)
+            : null;
+      const { dueAt, basis } = computeDueAt({
+        stageId: newStageId,
+        enteredAt: entered,
+        ...(limiteMerged ? { externalDeadline: limiteMerged } : {}),
+      });
+      nextMeta["stageId"] = newStageId;
+      nextMeta["dueAt"] = dueAt?.toISOString() ?? null;
+      nextMeta["slaBasis"] = basis;
+      nextMeta["stageEnteredAt"] = entered.toISOString();
+    } else {
+      for (const key of ["stageId", "dueAt", "slaBasis", "stageEnteredAt"] as const) {
+        const v = prevMetaRaw[key];
+        if (v !== undefined) {
+          nextMeta[key] = v as Prisma.InputJsonValue;
+        }
+      }
+    }
   }
 
   if (parsed.data.status === "won") {
@@ -133,7 +166,7 @@ export async function PATCH(
   if (Object.keys(safeMeta).length > 0) auditPayload["meta"] = safeMeta as Prisma.InputJsonObject;
 
   const updated = await db.deal.update({
-    where: { id: deal.id },
+    where: { id: deal.id, workspaceId: session.workspaceId },
     data: {
       ...(safeTitle ? { title: safeTitle } : {}),
       ...(safeOwnerId !== undefined ? { ownerId: safeOwnerId || null } : {}),

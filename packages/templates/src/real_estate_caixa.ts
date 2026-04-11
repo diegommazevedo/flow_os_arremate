@@ -106,14 +106,19 @@ export const ROCKET_KEYWORD_RULES = {
   ],
 } as const;
 
-const MODALIDADE_VALUES = [
+export const MODALIDADE_VALUES = [
   "Licitação Aberta",
   "Venda Online",
   "Venda Direta Online",
   "Venda Direta",
 ] as const;
 
-const SUBTYPE_VALUES = ["FINANCIAMENTO", "A_VISTA", "LICITACAO_ABERTA"] as const;
+export const SUBTYPE_VALUES = ["FINANCIAMENTO", "A_VISTA", "LICITACAO_ABERTA"] as const;
+export const SUBTYPE_TO_MODALIDADE: Record<(typeof SUBTYPE_VALUES)[number], (typeof MODALIDADE_VALUES)[number]> = {
+  FINANCIAMENTO: "Venda Online",
+  A_VISTA: "Venda Direta",
+  LICITACAO_ABERTA: "Licitação Aberta",
+};
 const FORMA_PAGAMENTO_VALUES = ["À vista", "Financiamento", "FGTS", "Misto"] as const;
 const BOLETO_STATUS_VALUES = ["PENDENTE", "PAGO", "VENCIDO", "AGUARDANDO"] as const;
 const EXECUTOR_VALUES = ["Caixa", "Cliente", "Escritório"] as const;

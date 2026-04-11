@@ -7,9 +7,20 @@ export { RealEstateTemplate, RealEstateMetaSchema, RealEstateStages } from "./re
 export type { RealEstateMeta } from "./real-estate";
 
 export {
+  computeDueAt,
+  defaultBrazilWeekendCalendar,
+} from "./sla-due-at";
+export type { ComputeDueAtInput, ComputeDueAtResult } from "./sla-due-at";
+
+export {
   RealEstateCaixaTemplate,
   RealEstateCaixaMetaSchema,
   PIPELINE_STAGES,
+  PIPELINE_MASTER_CONFIG,
+  OWNER_GROUPS,
+  EXCEPTION_TYPE_VALUES,
+  EXCEPTION_TYPES,
+  hasExclusiveSlaPolicy,
   COND_STATUS_VALUES,
   ATIVIDADE_TIPOS,
   PHASE_DEFINITIONS,
@@ -29,12 +40,20 @@ export {
   EMAIL_CLASSIFICATION_RULES,
   REAL_ESTATE_CAIXA_TEMPLATE_ID,
   ROCKET_KEYWORD_RULES,
+  MODALIDADE_VALUES,
+  SUBTYPE_VALUES,
+  SUBTYPE_TO_MODALIDADE,
 } from "./real_estate_caixa";
 export type {
   RealEstateCaixaMeta,
   FlowTemplate,
   FaseId,
+  StageId,
   EtapaId,
+  OwnerGroup,
+  ExceptionType,
+  PipelineMasterStage,
+  PipelineMasterConfig,
   DealSubtype,
   FaseStatus,
   AverbacaoStatus,
