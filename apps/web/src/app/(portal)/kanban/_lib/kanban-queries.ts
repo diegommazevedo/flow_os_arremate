@@ -5,7 +5,7 @@
 
 import { db } from "@flow-os/db";
 import type { Prisma } from "@flow-os/db";
-import type { StageId } from "@flow-os/templates";
+import { PIPELINE_MASTER_CONFIG, type StageId } from "@flow-os/templates";
 import type { KanbanDeal, KanbanStatus, EisenhowerQ, ChannelBadge } from "../_components/types";
 
 // ─── Mapeamentos ──────────────────────────────────────────────────────────────
@@ -23,20 +23,27 @@ const QUADRANT_ORDER: Record<EisenhowerQ, number> = {
   Q1: 0, Q2: 1, Q3: 2, Q4: 3,
 };
 
-const PHASE_COLORS: Record<string, string> = {
-  triagem: "#64748b",
-  sem_acesso_grupo: "#475569",
-  primeiro_contato: "#0f766e",
-  fgts_contratacao: "#0ea5e9",
-  itbi: "#f59e0b",
-  escritura: "#8b5cf6",
-  registro: "#2563eb",
-  troca_titularidade: "#ec4899",
-  envio_docs_cef: "#06b6d4",
-  docs_aguardando_cef: "#14b8a6",
-  emissao_nf: "#f97316",
-  processo_concluido: "#22c55e",
-};
+const PHASE_COLOR_PALETTE = [
+  "#64748b",
+  "#475569",
+  "#0f766e",
+  "#0ea5e9",
+  "#f59e0b",
+  "#8b5cf6",
+  "#2563eb",
+  "#ec4899",
+  "#06b6d4",
+  "#14b8a6",
+  "#f97316",
+  "#22c55e",
+] as const;
+
+const PHASE_COLORS: Record<string, string> = Object.fromEntries(
+  PIPELINE_MASTER_CONFIG.stages.map((stage, index) => [
+    stage.id,
+    PHASE_COLOR_PALETTE[index % PHASE_COLOR_PALETTE.length],
+  ]),
+) as Record<string, string>;
 
 const ASSIGNEE_COLORS = [
   "#8b5cf6", "#3b82f6", "#10b981", "#f97316",
