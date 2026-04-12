@@ -262,6 +262,18 @@ async function uploadDocument(id: string, file: File, checklistItemId: string) {
   return response.json();
 }
 
+async function deleteDocument(dealId: string, documentId: string) {
+  const response = await fetch(`/api/deals/${dealId}/documents/${documentId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error("Falha ao excluir documento");
+  }
+
+  return response.json();
+}
+
 function Section({
   title,
   fields,
@@ -408,6 +420,7 @@ export function DealDetailClient({ initialDeal }: { initialDeal: DealDetailData 
   const [noteContent, setNoteContent] = useState("");
   const [documentLabel, setDocumentLabel] = useState("");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [activityForm, setActivityForm] = useState<{
     title: string;
     type: (typeof ATIVIDADE_TIPOS)[number];
@@ -942,19 +955,45 @@ export function DealDetailClient({ initialDeal }: { initialDeal: DealDetailData 
               <div className="space-y-4 pt-4">
                 <div className="space-y-3">
                   {documents.map((document) => (
-                    <a
+                    <div
                       key={document.id}
-                      href={document.url}
-                      target="_blank"
-                      rel="noreferrer"
                       className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 p-3 transition-colors hover:border-gray-700"
                     >
                       <div>
                         <div className="text-sm font-medium text-white">{document.name}</div>
                         <div className="mt-1 text-xs text-gray-500">{document.contentType}</div>
                       </div>
-                      <div className="text-xs text-gray-500">{formatDateTime(document.createdAt)}</div>
-                    </a>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-gray-500">{formatDateTime(document.createdAt)}</div>
+                        <a
+                          href={document.url}
+                          download
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-lg border border-gray-700 bg-gray-950 px-2 py-1 text-xs font-medium text-gray-200 hover:border-gray-600"
+                        >
+                          Download
+                        </a>
+                        <button
+                          type="button"
+                          disabled={isPending || deletingDocumentId === document.id}
+                          onClick={() => {
+                            setDeletingDocumentId(document.id);
+                            startTransition(async () => {
+                              try {
+                                await deleteDocument(initialDeal.id, document.id);
+                                setDocuments((current) => current.filter((item) => item.id !== document.id));
+                              } finally {
+                                setDeletingDocumentId((current) => (current === document.id ? null : current));
+                              }
+                            });
+                          }}
+                          className="rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-300 hover:border-red-500/60 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
 
