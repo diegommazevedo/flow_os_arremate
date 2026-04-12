@@ -213,6 +213,8 @@ const integrationCache = new Map<string, {
   expiresAt: number;
 }>();
 const INTEGRATION_CACHE_TTL = 60_000; // 1 minuto
+const groupSubjectCache = new Map<string, { subject: string; expiresAt: number }>();
+const GROUP_SUBJECT_CACHE_TTL = 5 * 60_000; // 5 minutos
 
 async function resolveIntegration(instance: string) {
   const cached = integrationCache.get(instance);
@@ -232,6 +234,78 @@ async function resolveIntegration(instance: string) {
 
   integrationCache.set(instance, { data: result, expiresAt: Date.now() + INTEGRATION_CACHE_TTL });
   return result;
+}
+
+function extractGroupSubjectFromFindInfos(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const readSubject = (candidate: unknown): string | null => {
+    if (!candidate || typeof candidate !== "object") return null;
+    const rec = candidate as Record<string, unknown>;
+    const subject = rec["subject"];
+    if (typeof subject === "string" && subject.trim()) return defaultSanitizer.clean(subject);
+    return null;
+  };
+
+  const root = payload as Record<string, unknown>;
+  const fromRoot = readSubject(root);
+  if (fromRoot) return fromRoot;
+
+  const groupInfo = root["groupInfo"];
+  const fromGroupInfo = readSubject(groupInfo);
+  if (fromGroupInfo) return fromGroupInfo;
+
+  const data = root["data"];
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const fromItem = readSubject(item);
+      if (fromItem) return fromItem;
+      const fromNested = readSubject((item as Record<string, unknown>)?.["groupInfo"]);
+      if (fromNested) return fromNested;
+    }
+  } else {
+    const fromData = readSubject(data);
+    if (fromData) return fromData;
+    const fromDataNested = readSubject((data as Record<string, unknown> | null)?.["groupInfo"]);
+    if (fromDataNested) return fromDataNested;
+  }
+
+  return null;
+}
+
+async function resolveGroupSubject(params: {
+  instance: string;
+  groupJid: string;
+  config: Record<string, string>;
+}): Promise<string | null> {
+  const cacheKey = `${params.instance}:${params.groupJid}`;
+  const cached = groupSubjectCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.subject;
+
+  const { baseUrl, apiKey } = evolutionHttpCtx(params.config);
+  if (!apiKey) return null;
+
+  try {
+    const url = `${baseUrl}/group/findGroupInfos/${encodeURIComponent(params.instance)}?groupJid=${encodeURIComponent(params.groupJid)}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { apikey: apiKey },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+
+    const json = (await response.json().catch(() => null)) as unknown;
+    const subject = extractGroupSubjectFromFindInfos(json);
+    if (!subject) return null;
+
+    groupSubjectCache.set(cacheKey, {
+      subject,
+      expiresAt: Date.now() + GROUP_SUBJECT_CACHE_TTL,
+    });
+    return subject;
+  } catch {
+    return null;
+  }
 }
 
 async function alertPriorityChannel(
@@ -523,6 +597,7 @@ export async function POST(req: NextRequest) {
   const instance = payload.instance;
   const remoteJid = payload.data.key.remoteJid;
   const messageId = payload.data.key.id;
+  const isFromMe = payload.data.key.fromMe === true;
   const isGroup = remoteJid.includes("@g.us");
   const from = remoteJid.replace("@s.whatsapp.net", "").replace("@g.us", "");
   const messageRecord = payload.data.message;
@@ -573,7 +648,7 @@ export async function POST(req: NextRequest) {
     mediaKind: mediaMeta?.kind ?? storedMedia?.kind ?? null,
   });
 
-  const rawPush = defaultSanitizer.clean(payload.data.pushName ?? from);
+  const rawPush = defaultSanitizer.clean(payload.data.pushName ?? "");
 
   const mediaBlock = storedMedia
     ? {
@@ -594,10 +669,14 @@ export async function POST(req: NextRequest) {
       defaultSanitizer.clean(payload.data.pushName ?? ""),
       participantJid.replace("@s.whatsapp.net", "") || shortGroupId,
     );
-    // Nome do grupo: groupSubject do payload (Evolution v2) > pushName NÃO é o nome do grupo
-    const groupSubject = typeof payload.data.groupSubject === "string" && payload.data.groupSubject.trim()
+    // Nome do grupo: groupSubject do payload (Evolution v2) > consulta findGroupInfos > fallback.
+    const payloadGroupSubject = typeof payload.data.groupSubject === "string" && payload.data.groupSubject.trim()
       ? defaultSanitizer.clean(payload.data.groupSubject)
       : "";
+    const groupSubject =
+      payloadGroupSubject ||
+      (await resolveGroupSubject({ instance, groupJid, config })) ||
+      "";
     const msgTimestamp =
       typeof payload.data.messageTimestamp === "number" ? payload.data.messageTimestamp : Date.now();
 
@@ -741,7 +820,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const safeName = evolutionParticipantDisplayName(rawPush, from);
+  let safeName = evolutionParticipantDisplayName(rawPush, from);
+  if (isFromMe) {
+    const digits = from.replace(/\D/g, "");
+    const existingContact = await db.contact.findFirst({
+      where: { workspaceId, phone: { in: [digits, `+${digits}`, from] } },
+      select: { name: true },
+    });
+    if (existingContact?.name?.trim()) {
+      safeName = existingContact.name.trim();
+    }
+  }
 
   const contactId = await resolveOrCreateContact(workspaceId, from, safeName);
   const deal = await resolveOrCreateDeal(workspaceId, contactId, from);

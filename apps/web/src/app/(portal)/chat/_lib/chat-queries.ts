@@ -8,6 +8,8 @@
  */
 
 import { db } from "@flow-os/db";
+import { decrypt } from "@/lib/encrypt";
+import { normalizeEvolutionApiBaseUrl } from "@/lib/evolution";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +121,189 @@ function channelForChatLog(log: { action: string; input: unknown }): ChannelType
   if (log.action.includes("whatsapp") || log.action === "webhook_whatsapp") return "WA";
   if (log.action.includes("rocket") || log.action === "webhook_rocket") return "RC";
   return "INTERNAL";
+}
+
+function evolutionTextFromMessage(msg: Record<string, unknown>): string {
+  const conversation = msg["conversation"];
+  if (typeof conversation === "string" && conversation.trim()) return conversation;
+
+  const extendedText = msg["extendedTextMessage"];
+  if (extendedText && typeof extendedText === "object") {
+    const text = (extendedText as Record<string, unknown>)["text"];
+    if (typeof text === "string" && text.trim()) return text;
+  }
+
+  const mediaKinds = [
+    { key: "imageMessage", label: "IMAGE" },
+    { key: "audioMessage", label: "AUDIO" },
+    { key: "videoMessage", label: "VIDEO" },
+    { key: "documentMessage", label: "DOCUMENT" },
+    { key: "stickerMessage", label: "STICKER" },
+  ] as const;
+  for (const mediaKind of mediaKinds) {
+    const media = msg[mediaKind.key];
+    if (!media || typeof media !== "object") continue;
+    const caption = (media as Record<string, unknown>)["caption"];
+    if (typeof caption === "string" && caption.trim()) return caption;
+    return `[${mediaKind.label}]`;
+  }
+
+  return "";
+}
+
+function extractEvolutionMessagesFromFindMessages(payload: unknown): Record<string, unknown>[] {
+  const tryArray = (value: unknown): Record<string, unknown>[] => {
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  };
+
+  const rootArray = tryArray(payload);
+  if (rootArray.length > 0) return rootArray;
+  if (!payload || typeof payload !== "object") return [];
+
+  const root = payload as Record<string, unknown>;
+  const candidates = [
+    root["messages"],
+    root["data"],
+    root["results"],
+    (root["data"] as Record<string, unknown> | undefined)?.["messages"],
+    (root["response"] as Record<string, unknown> | undefined)?.["messages"],
+    (root["response"] as Record<string, unknown> | undefined)?.["data"],
+  ];
+  for (const candidate of candidates) {
+    const arr = tryArray(candidate);
+    if (arr.length > 0) return arr;
+  }
+
+  return [];
+}
+
+async function fetchEvolutionMessagesFallback(taskId: string, workspaceId: string): Promise<ChatMessage[]> {
+  const task = await db.task.findFirst({
+    where: { id: taskId, workspaceId },
+    select: {
+      channel: true,
+      groupId: true,
+      description: true,
+      deal: {
+        select: {
+          contact: {
+            select: { phone: true, name: true },
+          },
+        },
+      },
+    },
+  });
+  if (!task) return [];
+
+  let descriptionMeta: Record<string, unknown> = {};
+  try {
+    descriptionMeta = JSON.parse(task.description ?? "{}") as Record<string, unknown>;
+  } catch {
+    descriptionMeta = {};
+  }
+
+  const chatSession = await db.chatSession.findFirst({
+    where: { taskId, workspaceId },
+    select: { aparelhoOrigem: true },
+  });
+
+  const instanceHints = [
+    String(chatSession?.aparelhoOrigem ?? "").trim(),
+    String(descriptionMeta["instanceName"] ?? "").trim(),
+  ].filter(Boolean);
+
+  const integration = await db.workspaceIntegration.findFirst({
+    where: {
+      workspaceId,
+      type: "WHATSAPP_EVOLUTION",
+      status: "ACTIVE",
+      ...(instanceHints.length > 0
+        ? {
+            OR: [
+              ...instanceHints.map((hint) => ({ config: { path: ["EVOLUTION_INSTANCE_NAME"], equals: hint } })),
+              ...instanceHints.map((hint) => ({ config: { path: ["instanceName"], equals: hint } })),
+            ],
+          }
+        : {}),
+    },
+    select: { config: true },
+  });
+  if (!integration) return [];
+
+  const cfg = (integration.config ?? {}) as Record<string, string>;
+  const instanceName = cfg["EVOLUTION_INSTANCE_NAME"] ?? cfg["instanceName"] ?? String(chatSession?.aparelhoOrigem ?? descriptionMeta["instanceName"] ?? "");
+  if (!instanceName) return [];
+
+  const apiUrl = normalizeEvolutionApiBaseUrl(
+    cfg["EVOLUTION_API_URL"] ??
+      cfg["apiUrl"] ??
+      process.env["EVOLUTION_API_URL"] ??
+      "http://localhost:8080",
+  );
+  const apiKey = cfg["apiKey"]
+    ? (() => {
+        try {
+          return decrypt(cfg["apiKey"]);
+        } catch {
+          return process.env["EVOLUTION_API_KEY"] ?? "";
+        }
+      })()
+    : (process.env["EVOLUTION_API_KEY"] ?? "");
+  if (!apiKey) return [];
+
+  const isGroupChannel = String(task.channel ?? "").toUpperCase() === "WA_GROUP";
+  const groupJid = String(descriptionMeta["groupJid"] ?? "");
+  const groupId = String(task.groupId ?? descriptionMeta["groupId"] ?? "");
+  const phone = String(descriptionMeta["phone"] ?? task.deal?.contact?.phone ?? "");
+  const remoteJid = isGroupChannel
+    ? (groupJid || (groupId ? `${groupId}@g.us` : ""))
+    : (phone.includes("@") ? phone : `${phone.replace(/\D/g, "")}@s.whatsapp.net`);
+  if (!remoteJid) return [];
+
+  const response = await fetch(`${apiUrl}/chat/findMessages/${encodeURIComponent(instanceName)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: apiKey,
+    },
+    body: JSON.stringify({
+      where: { key: { remoteJid } },
+      page: 1,
+      offset: 50,
+    }),
+    cache: "no-store",
+  });
+  if (!response.ok) return [];
+
+  const json = (await response.json().catch(() => null)) as unknown;
+  const entries = extractEvolutionMessagesFromFindMessages(json);
+  if (entries.length === 0) return [];
+
+  const mapped = entries.map((entry) => {
+    const key = (entry["key"] as Record<string, unknown> | undefined) ?? {};
+    const message = (entry["message"] as Record<string, unknown> | undefined) ?? {};
+    const tsRaw = entry["messageTimestamp"];
+    const ts = typeof tsRaw === "number"
+      ? (tsRaw > 10_000_000_000 ? tsRaw : tsRaw * 1000)
+      : Date.now();
+
+    const text = evolutionTextFromMessage(message) || "[mensagem]";
+    const fromMe = key["fromMe"] === true;
+
+    return {
+      id: String(key["id"] ?? `${taskId}:${ts}`),
+      direction: (fromMe ? "OUT" : "IN") as "IN" | "OUT",
+      channel: isGroupChannel ? "WA_GROUP" : "WA_EVOLUTION",
+      text,
+      sentAt: ts,
+      author: fromMe ? "FlowOS" : String(entry["pushName"] ?? descriptionMeta["name"] ?? task.deal?.contact?.name ?? "Cliente"),
+    } satisfies ChatMessage;
+  });
+
+  return mapped
+    .sort((a, b) => a.sentAt - b.sentAt)
+    .filter((msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx);
 }
 
 // ─── Name / Preview helpers ───────────────────────────────────────────────────
@@ -284,6 +469,10 @@ export async function getMessages(taskId: string, workspaceId: string): Promise<
   const all = [...inLogs, ...outLogs]
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     .filter((log, i, arr) => arr.findIndex(l => l.id === log.id) === i);
+
+  if (all.length === 0) {
+    return fetchEvolutionMessagesFallback(taskId, workspaceId);
+  }
 
   return all.map(log => {
     const inp   = (log.input  as Record<string, unknown> | null) ?? {};
