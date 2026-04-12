@@ -30,6 +30,7 @@ let s3Client: S3Client | null = null;
 
 function getStorageEnv() {
   const endpoint = process.env["MINIO_ENDPOINT"];
+  const publicUrl = process.env["MINIO_PUBLIC_URL"];
   const accessKeyId = process.env["MINIO_ACCESS_KEY"];
   const secretAccessKey = process.env["MINIO_SECRET_KEY"];
 
@@ -39,6 +40,7 @@ function getStorageEnv() {
 
   return {
     endpoint,
+    publicUrl,
     accessKeyId,
     secretAccessKey,
     region: process.env["MINIO_REGION"] ?? "us-east-1",
@@ -197,8 +199,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       new PutObjectCommand({ Bucket: bucket, Key: s3Key, ContentType: contentType }),
       { expiresIn: PRESIGN_TTL_SECONDS },
     );
-    const endpoint = getStorageEnv().endpoint;
-    fileUrl = `${endpoint}/${bucket}/${s3Key}`;
+    const publicBaseUrl = getStorageEnv().publicUrl?.replace(/\/$/, "");
+    fileUrl = publicBaseUrl
+      ? `${publicBaseUrl}/${bucket}/${s3Key}`
+      : `/api/portal/docs/${encodeURIComponent(s3Key)}`;
   } catch {
     fileUrl = `/api/portal/docs/${encodeURIComponent(s3Key)}`;
   }
