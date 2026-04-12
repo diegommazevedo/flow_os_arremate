@@ -486,7 +486,14 @@ function evolutionParticipantDisplayName(cleanedPushName: string, phoneKey: stri
 }
 
 export async function POST(req: NextRequest) {
-  if (req.headers.get("apikey") !== process.env["EVOLUTION_WEBHOOK_TOKEN"]) {
+  const incomingApiKey = req.headers.get("apikey");
+  const validWebhookToken = process.env["EVOLUTION_WEBHOOK_TOKEN"];
+  const validApiKey = process.env["EVOLUTION_API_KEY"];
+  const isAuthorized =
+    Boolean(incomingApiKey) &&
+    (incomingApiKey === validWebhookToken || incomingApiKey === validApiKey);
+
+  if (!isAuthorized) {
     return new Response(null, { status: 401 });
   }
 
