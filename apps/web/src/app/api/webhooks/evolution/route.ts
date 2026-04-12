@@ -576,25 +576,15 @@ function evolutionParticipantDisplayName(cleanedPushName: string, phoneKey: stri
 }
 
 export async function POST(req: NextRequest) {
-  const headerApikey = req.headers.get("apikey");
-  const headerXToken = req.headers.get("x-webhook-token");
-  const headerBearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const incomingApiKey = headerApikey ?? headerXToken ?? headerBearer;
+  const incomingApiKey =
+    req.headers.get("apikey") ??
+    req.headers.get("x-webhook-token") ??
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const validWebhookToken = process.env["EVOLUTION_WEBHOOK_TOKEN"];
   const validApiKey = process.env["EVOLUTION_API_KEY"];
   const isAuthorized =
     Boolean(incomingApiKey) &&
     (incomingApiKey === validWebhookToken || incomingApiKey === validApiKey);
-
-  // TODO: remover após confirmar webhook auth funcionando
-  console.log("[webhook-auth]", {
-    headerApikey: headerApikey ? `…${headerApikey.slice(-4)}` : null,
-    headerXToken: headerXToken ? `…${headerXToken.slice(-4)}` : null,
-    headerBearer: headerBearer ? `…${headerBearer.slice(-4)}` : null,
-    envToken: validWebhookToken ? `…${validWebhookToken.slice(-4)}` : null,
-    envApiKey: validApiKey ? `…${validApiKey.slice(-4)}` : null,
-    isAuthorized,
-  });
 
   if (!isAuthorized) {
     return new Response(null, { status: 401 });
