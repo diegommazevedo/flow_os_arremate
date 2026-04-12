@@ -298,7 +298,13 @@ function ConvRow({
             </div>
           </div>
           <div className="shrink-0 flex flex-col items-end gap-1">
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)' }} className="leading-none">{relTime(conv.lastAt)}</span>
+            <span
+              suppressHydrationWarning
+              style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)' }}
+              className="leading-none"
+            >
+              {relTime(conv.lastAt)}
+            </span>
             {conv.unreadCount > 0 && (
               <span
                 className="shrink-0 flex items-center justify-center text-white font-semibold"
@@ -406,7 +412,7 @@ function Bubble({ msg }: { msg: ChatMessage }) {
           <span className="opacity-70 scale-90 origin-bottom-right">
             <ChannelPip channel={msg.channel} />
           </span>
-          <span className="tabular-nums shrink-0">
+          <span className="tabular-nums shrink-0" suppressHydrationWarning>
             {new Date(msg.sentAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
           </span>
           {isOut ? tickEl : null}
