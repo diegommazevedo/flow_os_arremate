@@ -28,14 +28,33 @@ const PRESIGN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 let s3Client: S3Client | null = null;
 
+function getStorageEnv() {
+  const endpoint = process.env["MINIO_ENDPOINT"];
+  const accessKeyId = process.env["MINIO_ACCESS_KEY"];
+  const secretAccessKey = process.env["MINIO_SECRET_KEY"];
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    throw new Error("MINIO storage not configured (MINIO_ENDPOINT/MINIO_ACCESS_KEY/MINIO_SECRET_KEY).");
+  }
+
+  return {
+    endpoint,
+    accessKeyId,
+    secretAccessKey,
+    region: process.env["MINIO_REGION"] ?? "us-east-1",
+    bucket: process.env["MINIO_BUCKET"] ?? "flowos",
+  };
+}
+
 function getS3(): S3Client {
   if (s3Client) return s3Client;
+  const env = getStorageEnv();
   s3Client = new S3Client({
-    endpoint: process.env["MINIO_ENDPOINT"] ?? "http://localhost:9000",
-    region: process.env["MINIO_REGION"] ?? "us-east-1",
+    endpoint: env.endpoint,
+    region: env.region,
     credentials: {
-      accessKeyId: process.env["MINIO_ACCESS_KEY"] ?? "minioadmin",
-      secretAccessKey: process.env["MINIO_SECRET_KEY"] ?? "minioadmin",
+      accessKeyId: env.accessKeyId,
+      secretAccessKey: env.secretAccessKey,
     },
     forcePathStyle: true,
   });
@@ -43,7 +62,7 @@ function getS3(): S3Client {
 }
 
 function getBucket(): string {
-  return process.env["MINIO_BUCKET"] ?? "flowos";
+  return getStorageEnv().bucket;
 }
 
 function toSlug(label: string): string {
@@ -142,7 +161,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const slug = toSlug(checklistItemId || safeFileName);
   const timestamp = Date.now();
   const s3Key = `${deal.workspaceId}/${deal.id}/docs/${slug}-${timestamp}.${ext}`;
-  const bucket = getBucket();
+  let bucket: string;
+  try {
+    bucket = getBucket();
+  } catch (error) {
+    console.error("[upload-document] MinIO env error:", error);
+    return NextResponse.json({ error: "Storage não configurado no servidor." }, { status: 503 });
+  }
 
   try {
     await getS3().send(new PutObjectCommand({
@@ -172,7 +197,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       new PutObjectCommand({ Bucket: bucket, Key: s3Key, ContentType: contentType }),
       { expiresIn: PRESIGN_TTL_SECONDS },
     );
-    const endpoint = process.env["MINIO_ENDPOINT"] ?? "http://localhost:9000";
+    const endpoint = getStorageEnv().endpoint;
     fileUrl = `${endpoint}/${bucket}/${s3Key}`;
   } catch {
     fileUrl = `/api/portal/docs/${encodeURIComponent(s3Key)}`;

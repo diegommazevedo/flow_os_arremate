@@ -3,7 +3,7 @@ export const runtime  = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db } from "@flow-os/db";
+import { db, type Prisma } from "@flow-os/db";
 import { decrypt } from "@/lib/encrypt";
 import { getSessionContext } from "@/lib/session";
 import {
@@ -12,128 +12,64 @@ import {
   normalizeInstancesPayload,
   parseEvolutionConnectionStateJson,
 } from "@/lib/evolution";
+import {
+  applyConnectAttemptResult,
+  breakerUserMessage,
+  getEvolutionOperational,
+  isBreakerBlocking,
+  mergeEvolutionOperationalIntoConfig,
+  nextSuggestedActionForClass,
+  normalizeOperationalStateClock,
+  pickQrForClient,
+  unwrapEvolutionBody,
+} from "@/lib/evolution-connect-ops";
 
 const PostSchema = z.object({
   integrationId: z.string().min(1),
 });
 
 /** Mesmas chaves que seed / chat/new / webhook (apiUrl vs EVOLUTION_API_URL). */
-function evolutionConnectionParams(config: Record<string, string>): {
+function evolutionConnectionParams(config: Record<string, unknown>): {
   apiUrl: string;
   apiKey: string;
   instance: string;
-  /** DDI+DDD+número só dígitos — GET /instance/connect/...?number= (workaround Evolution). */
   connectDigits: string;
 } {
   const apiUrl = normalizeEvolutionApiBaseUrl(
-    config["apiUrl"] ||
-      config["EVOLUTION_API_URL"] ||
-      process.env["EVOLUTION_API_URL"] ||
-      "",
+    String(
+      config["apiUrl"] ??
+        config["EVOLUTION_API_URL"] ??
+        process.env["EVOLUTION_API_URL"] ??
+        "",
+    ),
   );
-  const apiKey = config["apiKey"]
-    ? (() => {
-        try {
-          return decrypt(config["apiKey"]);
-        } catch {
-          return process.env["EVOLUTION_API_KEY"] ?? "";
-        }
-      })()
-    : (process.env["EVOLUTION_API_KEY"] ?? "");
-  const instance = (
-    config["instanceName"] ??
-    config["EVOLUTION_INSTANCE_NAME"] ??
-    ""
+  const keyRaw = config["apiKey"];
+  const apiKey =
+    typeof keyRaw === "string" && keyRaw.length > 0
+      ? (() => {
+          try {
+            return decrypt(keyRaw);
+          } catch {
+            return process.env["EVOLUTION_API_KEY"] ?? "";
+          }
+        })()
+      : (process.env["EVOLUTION_API_KEY"] ?? "");
+  const instance = String(
+    config["instanceName"] ?? config["EVOLUTION_INSTANCE_NAME"] ?? "",
   ).trim();
-  const connectDigits = (
+  const connectDigits = String(
     config["connectNumber"] ??
-    config["EVOLUTION_CONNECT_NUMBER"] ??
-    process.env["EVOLUTION_CONNECT_NUMBER"] ??
-    ""
+      config["EVOLUTION_CONNECT_NUMBER"] ??
+      process.env["EVOLUTION_CONNECT_NUMBER"] ??
+      "",
   ).replace(/\D/g, "");
   return { apiUrl, apiKey, instance, connectDigits };
 }
 
-/** Evolution v2 embute o payload útil em `data` / `response`. */
-function unwrapEvolutionBody(parsed: Record<string, unknown>): Record<string, unknown> {
-  let out = { ...parsed };
-  for (const key of ["data", "response"] as const) {
-    const inner = out[key];
-    if (inner && typeof inner === "object" && inner !== null && !Array.isArray(inner)) {
-      out = { ...out, ...(inner as Record<string, unknown>) };
-    }
-  }
+function evolutionJsonResponse(body: Record<string, unknown>, status: number): NextResponse {
+  const out = NextResponse.json(body, { status });
+  out.headers.set("X-FlowOS-Evolution-QR-Flow", EVOLUTION_QR_FLOW);
   return out;
-}
-
-/**
- * PNG / data URI — mesmo critério que evolution-qr-live (evita tratar token Baileys curto como imagem).
- */
-function asImagePayload(s: string | undefined): string | undefined {
-  if (!s) return undefined;
-  if (s.startsWith("data:image")) return s;
-  if (s.length >= 800) return s;
-  return undefined;
-}
-
-function toDataUri(raw: string): string {
-  if (raw.startsWith("data:")) return raw;
-  const stripped = raw.replace(/^data:image\/\w+;base64,/, "");
-  return `data:image/png;base64,${stripped}`;
-}
-
-/**
- * Documentação Evolution 2.1.1: QR em GET /instance/connect/{instance}.
- * Varre objeto plano + `instance` aninhado (como scripts locais).
- */
-function pickQrForClient(data: Record<string, unknown>): string | null {
-  const asString = (v: unknown): string | undefined =>
-    typeof v === "string" && v.length > 0 ? v : undefined;
-
-  const fromFlat = (obj: Record<string, unknown>): string | null => {
-    const base64 = asString(obj["base64"]);
-    if (base64) return toDataUri(base64);
-
-    const nested = obj["qrcode"];
-    if (nested && typeof nested === "object" && nested !== null) {
-      const n = nested as Record<string, unknown>;
-      const img =
-        asImagePayload(asString(n["base64"])) ??
-        asImagePayload(asString(n["qrcode"])) ??
-        asImagePayload(asString(n["code"]));
-      if (img) return img.startsWith("data:") ? img : toDataUri(img);
-      const nb = asString(n["base64"]);
-      if (nb) return toDataUri(nb);
-      const pairN = asString(n["pairingCode"]);
-      if (pairN) return pairN;
-    }
-
-    const imgTop =
-      asImagePayload(asString(obj["qrcode"])) ??
-      asImagePayload(asString(obj["code"]));
-    if (imgTop) return imgTop.startsWith("data:") ? imgTop : toDataUri(imgTop);
-
-    const code = asString(obj["code"]);
-    if (code?.startsWith("2@")) return code;
-    if (code && /^[A-Z0-9]{6,16}$/i.test(code)) return code;
-
-    const pairing = asString(obj["pairingCode"]);
-    if (pairing) return pairing;
-
-    return null;
-  };
-
-  const walk = (obj: Record<string, unknown>): string | null => {
-    const got = fromFlat(obj);
-    if (got) return got;
-    const inst = obj["instance"];
-    if (inst && typeof inst === "object" && inst !== null) {
-      return walk(inst as Record<string, unknown>);
-    }
-    return null;
-  };
-
-  return walk(data);
 }
 
 function buildConnectUrl(apiUrl: string, instance: string, connectDigits: string): string {
@@ -157,10 +93,6 @@ async function fetchConnectBody(
   return { ok: true, data: unwrapEvolutionBody(raw) };
 }
 
-/**
- * OpenAPI v2: `DELETE /instance/logout/{instance}` — limpa credenciais/sessão pendente.
- * Mitiga respostas só `{"count":0}` sem `base64`/`code` (loop de reconnect antes do QR em algumas builds Evolution).
- */
 async function evolutionLogoutForPairing(
   apiUrl: string,
   apiKey: string,
@@ -173,7 +105,6 @@ async function evolutionLogoutForPairing(
   }).catch(() => null);
 }
 
-/** Rajadas + restart: Evolution muitas vezes devolve 200 com corpo vazio até estabilizar (v2.1.1). */
 async function obtainQrcodeWithRetries(opts: {
   apiUrl: string;
   apiKey: string;
@@ -225,13 +156,12 @@ async function obtainQrcodeWithRetries(opts: {
   return { empty: true, lastBody, topLevelKeys: keys };
 }
 
-/** Resposta 502 com diagnóstico: compara connect 404 com fetchInstances no mesmo host/chave. */
-async function evolutionConnectFailureResponse(opts: {
+async function buildEvolutionConnectFailurePayload(opts: {
   status: number;
   apiUrl: string;
   apiKey: string;
   instance: string;
-}): Promise<NextResponse> {
+}): Promise<{ error: string; diagnostic: Record<string, unknown> }> {
   const { status, apiUrl, apiKey, instance } = opts;
 
   let host = "";
@@ -278,9 +208,8 @@ async function evolutionConnectFailureResponse(opts: {
     }
   }
 
-  const body = {
-    error:           `${baseMsg}. ${hint}`,
-    evolutionQrFlow: EVOLUTION_QR_FLOW,
+  return {
+    error: `${baseMsg}. ${hint}`,
     diagnostic: {
       host,
       connectPath:            `/instance/connect/${encodeURIComponent(instance)}`,
@@ -290,10 +219,6 @@ async function evolutionConnectFailureResponse(opts: {
       instanceListedOnServer: instanceListed,
     },
   };
-
-  const out = NextResponse.json(body, { status: 502 });
-  out.headers.set("X-FlowOS-Evolution-QR-Flow", EVOLUTION_QR_FLOW);
-  return out;
 }
 
 // ── GET — lista status de todas as contas Evolution do workspace ───────────────
@@ -310,7 +235,7 @@ export async function GET() {
 
   const items = await Promise.all(
     integrations.map(async (integration) => {
-      const config = (integration.config ?? {}) as Record<string, string>;
+      const config = (integration.config ?? {}) as Record<string, unknown>;
       const { apiUrl, apiKey, instance } = evolutionConnectionParams(config);
 
       let state = "close";
@@ -321,7 +246,7 @@ export async function GET() {
             { headers: { apikey: apiKey }, signal: AbortSignal.timeout(4000) },
           );
           if (res.ok) {
-            const raw = await res.json() as unknown;
+            const raw = (await res.json()) as unknown;
             const st = parseEvolutionConnectionStateJson(raw);
             state = st.length > 0 ? st : "close";
           }
@@ -349,23 +274,57 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Body invalido" }, { status: 400 });
   }
 
+  const integrationId = parsed.data.integrationId;
+
   const integration = await db.workspaceIntegration.findFirst({
-    where:  { id: parsed.data.integrationId, workspaceId: session.workspaceId, type: "WHATSAPP_EVOLUTION" },
+    where:  { id: integrationId, workspaceId: session.workspaceId, type: "WHATSAPP_EVOLUTION" },
     select: { config: true },
   });
   if (!integration) {
     return NextResponse.json({ error: "Integracao nao encontrada" }, { status: 404 });
   }
 
-  const config = (integration.config ?? {}) as Record<string, string>;
-  const { apiUrl, apiKey, instance, connectDigits } = evolutionConnectionParams(config);
+  const cfgRecord = { ...(integration.config as Record<string, unknown>) };
+  const now         = new Date();
+  let op            = normalizeOperationalStateClock(getEvolutionOperational(cfgRecord), now);
+
+  if (isBreakerBlocking(op, now)) {
+    return evolutionJsonResponse(
+      {
+        ok:                   false,
+        status:               "degraded",
+        sessionState:         op.sessionState ?? "zombie",
+        responseClass:        op.lastConnectResponseClass ?? null,
+        breakerOpen:          true,
+        breakerUntil:         op.zombieUntil ?? null,
+        breakerReason:        op.breakerReason ?? null,
+        message:              breakerUserMessage(op.breakerReason),
+        nextSuggestedAction:
+          "Aguarde o fim da janela de bloqueio (alguns minutos) antes de solicitar um novo QR.",
+        evolutionQrFlow:      EVOLUTION_QR_FLOW,
+        build:                EVOLUTION_QR_FLOW,
+      },
+      429,
+    );
+  }
+
+  const persistOp = async (next: typeof op) => {
+    const merged = mergeEvolutionOperationalIntoConfig(cfgRecord, next);
+    await db.workspaceIntegration.update({
+      where: { id: integrationId },
+      data:  { config: merged as Prisma.InputJsonValue },
+    });
+  };
+
+  const { apiUrl, apiKey, instance, connectDigits } = evolutionConnectionParams(cfgRecord);
 
   if (!apiUrl || !instance) {
     return NextResponse.json({ error: "Instancia nao configurada" }, { status: 400 });
   }
 
+  const usedNumberParam = connectDigits.length >= 10;
+
   try {
-    // OpenAPI v2.1.1: `integration` é obrigatório; 403 = nome já em uso (seguir para connect).
     const createRes = await fetch(`${apiUrl}/instance/create`, {
       method:  "POST",
       headers: { apikey: apiKey, "Content-Type": "application/json" },
@@ -378,9 +337,36 @@ export async function POST(req: NextRequest) {
     }).catch(() => null);
 
     if (createRes?.status === 401) {
-      return NextResponse.json(
-        { error: "Evolution API: apikey inválida ou não autorizada (HTTP 401)" },
-        { status: 502 },
+      const opNext = applyConnectAttemptResult({
+        prev: op,
+        now,
+        result: { kind: "http_fail", status: 401 },
+      });
+      await persistOp(opNext);
+      const failPayload = await buildEvolutionConnectFailurePayload({
+        status: 401,
+        apiUrl,
+        apiKey,
+        instance,
+      });
+      return evolutionJsonResponse(
+        {
+          ok:                   false,
+          status:               "degraded",
+          sessionState:         opNext.sessionState,
+          responseClass:        opNext.lastConnectResponseClass,
+          responseKeysHint:     null,
+          breakerOpen:          opNext.breakerOpen ?? false,
+          breakerUntil:         opNext.zombieUntil ?? null,
+          breakerReason:        opNext.breakerReason ?? null,
+          message:              failPayload.error,
+          nextSuggestedAction:  nextSuggestedActionForClass(opNext.lastConnectResponseClass, usedNumberParam),
+          diagnostic:           { createRejected: true, ...failPayload.diagnostic },
+          error:                failPayload.error,
+          evolutionQrFlow:      EVOLUTION_QR_FLOW,
+          build:                EVOLUTION_QR_FLOW,
+        },
+        502,
       );
     }
 
@@ -392,39 +378,99 @@ export async function POST(req: NextRequest) {
     });
 
     if ("failConnect" in obtained) {
-      return await evolutionConnectFailureResponse({
+      const opNext = applyConnectAttemptResult({
+        prev: op,
+        now,
+        result: { kind: "http_fail", status: obtained.failConnect },
+      });
+      await persistOp(opNext);
+      const failPayload = await buildEvolutionConnectFailurePayload({
         status: obtained.failConnect,
         apiUrl,
         apiKey,
         instance,
       });
+      return evolutionJsonResponse(
+        {
+          ok:                   false,
+          status:               "degraded",
+          sessionState:         opNext.sessionState,
+          responseClass:        opNext.lastConnectResponseClass,
+          responseKeysHint:     null,
+          breakerOpen:          opNext.breakerOpen ?? false,
+          breakerUntil:         opNext.zombieUntil ?? null,
+          breakerReason:        opNext.breakerReason ?? null,
+          message:              failPayload.error,
+          nextSuggestedAction:  nextSuggestedActionForClass(opNext.lastConnectResponseClass, usedNumberParam),
+          diagnostic:           failPayload.diagnostic,
+          error:                failPayload.error,
+          evolutionQrFlow:      EVOLUTION_QR_FLOW,
+          build:                EVOLUTION_QR_FLOW,
+        },
+        502,
+      );
     }
 
     if ("empty" in obtained) {
+      const opNext = applyConnectAttemptResult({
+        prev: op,
+        now,
+        result: {
+          kind: "empty",
+          body: obtained.lastBody,
+          keys: obtained.topLevelKeys,
+        },
+      });
+      await persistOp(opNext);
       const hint =
         connectDigits.length < 10
           ? " Dica: defina EVOLUTION_CONNECT_NUMBER (DDI+DDD+número, só dígitos) no flowos-web ou connectNumber na integração — algumas builds Evolution só devolvem QR com ?number=."
           : "";
-      return NextResponse.json(
+      return evolutionJsonResponse(
         {
-          error:            `QR Code nao disponivel após várias tentativas.${hint}`,
-          evolutionQrFlow:  EVOLUTION_QR_FLOW,
+          ok:                   false,
+          status:               "degraded",
+          sessionState:         opNext.sessionState,
+          responseClass:        opNext.lastConnectResponseClass,
+          responseKeysHint:     obtained.topLevelKeys,
+          breakerOpen:          opNext.breakerOpen ?? false,
+          breakerUntil:         opNext.zombieUntil ?? null,
+          breakerReason:        opNext.breakerReason ?? null,
+          message:              `QR Code nao disponivel após várias tentativas.${hint}`,
+          nextSuggestedAction:  nextSuggestedActionForClass(opNext.lastConnectResponseClass, usedNumberParam),
           diagnostic: {
             connectRetriesExhausted: true,
             responseKeysHint:        obtained.topLevelKeys,
-            usedNumberParam:         connectDigits.length >= 10,
+            usedNumberParam:         usedNumberParam,
           },
+          error: `QR Code nao disponivel após várias tentativas.${hint}`,
+          evolutionQrFlow: EVOLUTION_QR_FLOW,
+          build:           EVOLUTION_QR_FLOW,
         },
-        { status: 202 },
+        202,
       );
     }
 
-    const out = NextResponse.json({
-      qrcode:          obtained.qrcode,
-      evolutionQrFlow: EVOLUTION_QR_FLOW,
+    const opNext = applyConnectAttemptResult({
+      prev: op,
+      now,
+      result: { kind: "qr_success" },
     });
-    out.headers.set("X-FlowOS-Evolution-QR-Flow", EVOLUTION_QR_FLOW);
-    return out;
+    await persistOp(opNext);
+
+    return evolutionJsonResponse(
+      {
+        ok:              true,
+        status:          "ok",
+        sessionState:    "qr_ready",
+        responseClass:   "qr_payload",
+        breakerOpen:     false,
+        qrcode:          obtained.qrcode,
+        evolutionQrFlow: EVOLUTION_QR_FLOW,
+        build:           EVOLUTION_QR_FLOW,
+      },
+      200,
+    );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Timeout ao conectar na Evolution API" },

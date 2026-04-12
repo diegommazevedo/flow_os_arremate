@@ -5,7 +5,6 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
-    "rootDir": "./src",
     "paths": {
       "@flow-os/core": ["../core/src/index.ts"]
     }

@@ -22,6 +22,9 @@ coverage/
 !.env.example
 !.env.mcp.example
 
+# Railway snapshot (contains secrets) - keep local only
+env_olution.yaml
+
 # Local/editor dirs
 .cursor/
 .claude/
@@ -39,4 +42,3 @@ Thumbs.db
 tmp/
 scripts/_truncate-*
 seed-prod.mjs
-

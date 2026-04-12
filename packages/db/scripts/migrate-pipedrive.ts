@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { PrismaClient, TaskPriority, type Prisma } from "@prisma/client";
 import { defaultSanitizer } from "@flow-os/core";
 import { UF_DEPARTMENT_MAP } from "@flow-os/templates";
+import { runPhaseMigration } from "./phase-migrate-current-phase";
 
 type CSVRow = Record<string, string>;
 
@@ -57,20 +58,28 @@ function hasFlag(flag: string): boolean {
   return ARGV.includes(flag);
 }
 
+const PHASE_MIGRATION_MODE = hasFlag("--phase-migration");
+const APPLY = hasFlag("--apply");
 const INPUT_PATH = getArg("--input");
-const WORKSPACE_ID = getArg("--org-id");
-const DRY_RUN = !hasFlag("--no-dry-run");
+const WORKSPACE_ID = getArg("--org-id") ?? getArg("--workspace-id");
+const WORKSPACE_SLUG = getArg("--workspace-slug");
+const DRY_RUN = PHASE_MIGRATION_MODE ? !APPLY : !hasFlag("--no-dry-run");
 const LIMIT = Math.max(0, Number(getArg("--limit") ?? "0")) || Infinity;
 
-if (!INPUT_PATH || !WORKSPACE_ID) {
+if (PHASE_MIGRATION_MODE) {
+  if (!WORKSPACE_ID && !WORKSPACE_SLUG) {
+    console.error("Uso: pnpm migrate:pipedrive -- --phase-migration (--workspace-id <id> | --workspace-slug <slug>) [--apply]");
+    process.exit(1);
+  }
+} else if (!INPUT_PATH || !WORKSPACE_ID) {
   console.error("Uso: pnpm migrate:pipedrive --input <csv> --org-id <workspaceId> [--no-dry-run] [--limit N]");
   process.exit(1);
 }
 
-const REQUIRED_INPUT_PATH = INPUT_PATH as string;
-const REQUIRED_WORKSPACE_ID = WORKSPACE_ID as string;
-const RESOLVED_INPUT = path.resolve(REQUIRED_INPUT_PATH);
-if (!fs.existsSync(RESOLVED_INPUT)) {
+const REQUIRED_INPUT_PATH = INPUT_PATH ?? "";
+const REQUIRED_WORKSPACE_ID = WORKSPACE_ID ?? "";
+const RESOLVED_INPUT = PHASE_MIGRATION_MODE ? "" : path.resolve(REQUIRED_INPUT_PATH);
+if (!PHASE_MIGRATION_MODE && !fs.existsSync(RESOLVED_INPUT)) {
   console.error(`Arquivo não encontrado: ${RESOLVED_INPUT}`);
   process.exit(1);
 }
@@ -517,6 +526,15 @@ async function createDeal(db: PrismaClient, workspaceId: string, mapped: DealCre
 }
 
 async function run() {
+  if (PHASE_MIGRATION_MODE) {
+    await runPhaseMigration({
+      workspaceId: WORKSPACE_ID ?? undefined,
+      workspaceSlug: WORKSPACE_SLUG ?? undefined,
+      dryRun: DRY_RUN,
+    });
+    return;
+  }
+
   const db = new PrismaClient({ log: ["error"] });
   const startedAt = new Date();
 

@@ -20,10 +20,21 @@ const MetaSchema = z.object({
   autoReply:          z.boolean().default(false),
 });
 
+/** Aceita host sem esquema; Zod `.url()` exige `https://` ou `http://`. */
+const evolutionApiUrlSchema = z
+  .string()
+  .min(1)
+  .transform((s) => {
+    const t = s.trim();
+    if (!/^https?:\/\//i.test(t)) return `https://${t}`;
+    return t;
+  })
+  .pipe(z.string().url());
+
 const EvolutionSchema = z.object({
   type:         z.literal("WHATSAPP_EVOLUTION"),
   name:         z.string().min(1).max(120),
-  apiUrl:       z.string().url(),
+  apiUrl:       evolutionApiUrlSchema,
   apiKey:       z.string().min(1),
   instanceName: z.string().min(1).max(80),
 });

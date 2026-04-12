@@ -47,6 +47,48 @@ function evolutionPayloadLooksLikeQrImage(s: string): boolean {
   return t.length >= 400;
 }
 
+/** Resposta estruturada Pacote A — Evolution POST /status */
+interface EvolutionStatusJson {
+  ok?: boolean;
+  qrcode?: string;
+  error?: string;
+  message?: string;
+  evolutionQrFlow?: string;
+  build?: string;
+  status?: string;
+  sessionState?: string;
+  responseClass?: string;
+  responseKeysHint?: string[];
+  breakerOpen?: boolean;
+  breakerUntil?: string | null;
+  breakerReason?: string | null;
+  nextSuggestedAction?: string;
+  diagnostic?: { responseKeysHint?: string[]; usedNumberParam?: boolean; connectRetriesExhausted?: boolean };
+}
+
+interface EvolutionStructuredDisplay {
+  ok?:                boolean;
+  status?:            string;
+  sessionState?:      string;
+  responseClass?:     string;
+  breakerOpen?:       boolean;
+  nextSuggestedAction?: string;
+  build?:             string;
+}
+
+function pickEvolutionStructured(qrD: EvolutionStatusJson): EvolutionStructuredDisplay {
+  const out: EvolutionStructuredDisplay = {};
+  if (qrD.ok !== undefined) out.ok = qrD.ok;
+  if (qrD.status !== undefined) out.status = qrD.status;
+  if (qrD.sessionState !== undefined) out.sessionState = qrD.sessionState;
+  if (qrD.responseClass !== undefined) out.responseClass = qrD.responseClass;
+  if (qrD.breakerOpen !== undefined) out.breakerOpen = qrD.breakerOpen;
+  if (qrD.nextSuggestedAction !== undefined) out.nextSuggestedAction = qrD.nextSuggestedAction;
+  const b = qrD.build ?? qrD.evolutionQrFlow;
+  if (b !== undefined && b !== "") out.build = b;
+  return out;
+}
+
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-3">
@@ -142,7 +184,12 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
   const [testRes, setTestRes] = useState<{ ok: boolean; error?: string; phone?: string } | null>(null);
   const [error,   setError]   = useState<string | null>(null);
 
-  // Evolution QR Code flow
+  // Evolution: persistência separada de connect/QR (Pacote A)
+  const [savedEvolutionIntegrationId, setSavedEvolutionIntegrationId] = useState<string | null>(null);
+  const [savingEvolution,  setSavingEvolution]  = useState(false);
+  const [deletingEvolution, setDeletingEvolution] = useState(false);
+  const [lastEvolutionStructured, setLastEvolutionStructured] = useState<EvolutionStructuredDisplay | null>(null);
+
   const [qrCode,        setQrCode]        = useState<string | null>(null);
   const [connectingQR,  setConnectingQR]  = useState(false);
   const [qrPolling,     setQrPolling]     = useState(false);
@@ -157,6 +204,26 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
   };
 
   const setF = (k: string, v: string) => setFields(prev => ({ ...prev, [k]: v }));
+
+  useEffect(() => {
+    if (type !== "WHATSAPP_EVOLUTION") {
+      setSavedEvolutionIntegrationId(null);
+      setLastEvolutionStructured(null);
+      setQrCode(null);
+      setQrConnected(false);
+      stopPolling();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset só ao trocar tipo; stopPolling é estável o suficiente
+  }, [type]);
+
+  const applyEvolutionStructured = (qrD: EvolutionStatusJson) => {
+    setLastEvolutionStructured(pickEvolutionStructured(qrD));
+  };
+
+  const buildPayload = () =>
+    type === "WHATSAPP_META"
+      ? { type, name, ...fields, autoReply }
+      : { type, name, ...fields };
 
   const test = async () => {
     setTesting(true); setTestRes(null);
@@ -174,42 +241,97 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
     setTesting(false);
   };
 
-  const rollbackIntegration = async (integId: string) => {
-    await fetch(`/api/integrations/whatsapp/${integId}/delete`, { method: "DELETE" }).catch(() => null);
-  };
-
-  const connectEvolutionQR = async () => {
-    setConnectingQR(true); setError(null); setQrCode(null); setQrConnected(false);
-    stopPolling();
-    let createdId: string | null = null;
+  const saveEvolutionIntegration = async () => {
+    setSavingEvolution(true);
+    setError(null);
     try {
-      // 1. Criar integração no banco
-      const createR = await fetch("/api/integrations/whatsapp/create", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload()),
-      });
-      if (!createR.ok) {
-        const d = await createR.json() as { error?: string };
-        throw new Error(d.error ?? "Erro ao criar integração");
-      }
-      const createD = await createR.json() as { integration?: { id: string } };
-      const integId = createD.integration?.id;
-      if (!integId) throw new Error("ID não retornado");
-      createdId = integId;
+      const payload: Record<string, unknown> = {
+        type:         "WHATSAPP_EVOLUTION",
+        name,
+        apiUrl:       fields["apiUrl"] ?? "",
+        apiKey:       fields["apiKey"] ?? "",
+        instanceName: fields["instanceName"] ?? "",
+      };
+      if (savedEvolutionIntegrationId) payload["integrationId"] = savedEvolutionIntegrationId;
 
-      // 2. Solicitar QR Code (servidor já faz retries / restart)
-      const qrR = await fetch("/api/integrations/evolution/status", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ integrationId: integId }),
+      const r = await fetch("/api/integrations/whatsapp/save", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(payload),
       });
-      const qrD = await qrR.json() as {
-        qrcode?: string;
+      const d = await r.json() as {
+        ok?: boolean;
+        integration?: { id: string };
         error?: string;
-        evolutionQrFlow?: string;
-        diagnostic?: { responseKeysHint?: string[]; usedNumberParam?: boolean };
+        existingIntegrationId?: string;
       };
 
+      if (r.status === 409) {
+        setError(
+          d.error ??
+            "Ja existe integracao Evolution com esta URL e instancia. Remova a duplicata na lista ou ajuste os campos.",
+        );
+        return;
+      }
+      if (!r.ok) throw new Error(d.error ?? `Erro ao salvar (${r.status})`);
+
+      const id = d.integration?.id;
+      if (!id) throw new Error("Resposta sem ID da integracao");
+      setSavedEvolutionIntegrationId(id);
+      setLastEvolutionStructured(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar");
+    } finally {
+      setSavingEvolution(false);
+    }
+  };
+
+  const generateEvolutionQR = async () => {
+    const integId = savedEvolutionIntegrationId;
+    if (!integId) {
+      setError("Salve a integracao antes de gerar o QR Code.");
+      return;
+    }
+
+    setConnectingQR(true);
+    setError(null);
+    setQrCode(null);
+    setQrConnected(false);
+    stopPolling();
+
+    try {
+      const qrR = await fetch("/api/integrations/evolution/status", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ integrationId: integId }),
+      });
+      const qrD = (await qrR.json()) as EvolutionStatusJson;
+      applyEvolutionStructured(qrD);
+
+      if (qrR.status === 429) {
+        const flowTag = qrD.build ?? qrD.evolutionQrFlow;
+        const parts = [
+          qrD.message ?? "Nova tentativa bloqueada temporariamente (circuit breaker).",
+          qrD.nextSuggestedAction,
+          qrD.breakerUntil ? `Ate: ${qrD.breakerUntil}.` : null,
+          flowTag ? `Build: ${flowTag}.` : null,
+        ].filter(Boolean);
+        setError(parts.join(" "));
+        return;
+      }
+
       if (!qrR.ok && qrR.status !== 202) {
+        if (qrD.message || qrD.error) {
+          const flowTag502 = qrD.build ?? qrD.evolutionQrFlow;
+          const parts = [
+            qrD.message ?? qrD.error,
+            qrD.nextSuggestedAction,
+            qrD.responseClass ? `Classe: ${qrD.responseClass}.` : null,
+            flowTag502 ? `Build: ${flowTag502}.` : null,
+          ].filter(Boolean);
+          setError(parts.join(" "));
+          return;
+        }
         const bits = [qrD.error ?? `HTTP ${qrR.status}`];
         if (qrD.evolutionQrFlow) bits.push(`[${qrD.evolutionQrFlow}]`);
         throw new Error(bits.join(" "));
@@ -217,29 +339,32 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
 
       const rawQr = (qrD.qrcode ?? "").trim();
       if (!rawQr) {
+        const keyHint =
+          qrD.responseKeysHint?.length
+            ? qrD.responseKeysHint
+            : qrD.diagnostic?.responseKeysHint;
+        const flowTagEmpty = qrD.build ?? qrD.evolutionQrFlow;
         const parts = [
-          qrD.error ?? "QR Code não disponível após as tentativas do servidor.",
-          qrD.diagnostic?.responseKeysHint?.length
-            ? `Resposta Evolution (chaves): ${qrD.diagnostic.responseKeysHint.join(", ")}.`
-            : null,
+          qrD.message ?? qrD.error ?? "QR Code nao disponivel apos as tentativas do servidor.",
+          qrD.responseClass ? `Classe: ${qrD.responseClass}.` : null,
+          keyHint?.length ? `Resposta Evolution (chaves): ${keyHint.join(", ")}.` : null,
           qrD.diagnostic?.usedNumberParam === false
-            ? "No Railway (flowos-web), defina EVOLUTION_CONNECT_NUMBER com o WhatsApp só em dígitos — algumas builds só devolvem QR com ?number=."
+            ? "No Railway (flowos-web), defina EVOLUTION_CONNECT_NUMBER com o WhatsApp so em digitos — algumas builds so devolvem QR com ?number=."
             : null,
-          qrD.evolutionQrFlow ? `Build FlowOS: ${qrD.evolutionQrFlow}.` : null,
+          qrD.nextSuggestedAction,
+          qrD.breakerOpen ? `Protecao ativa${qrD.breakerUntil ? ` ate ${qrD.breakerUntil}` : ""}.` : null,
+          flowTagEmpty ? `Build FlowOS: ${flowTagEmpty}.` : null,
         ].filter(Boolean);
         setError(parts.join(" "));
-        await rollbackIntegration(integId);
         return;
       }
 
       const hadVisualQr = evolutionPayloadLooksLikeQrImage(rawQr);
       setQrCode(rawQr);
 
-      // 3. Polling só quando há payload útil (imagem ou código de pareamento a mostrar)
       setQrPolling(true);
       pollRef.current = setInterval(async () => {
-        const testR = await fetch(`/api/integrations/whatsapp/${integId}/test`, { method: "POST" })
-          .catch(() => null);
+        const testR = await fetch(`/api/integrations/whatsapp/${integId}/test`, { method: "POST" }).catch(() => null);
         if (!testR?.ok) return;
         const testD = await testR.json() as { ok: boolean; state?: string };
         if (testD.ok) {
@@ -249,35 +374,55 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
         }
       }, 3000);
 
-      // QR expira ~60s mas o utilizador pode demorar; Evolution por vezes reporta "connected" em vez de "open"
       timeoutRef.current = setTimeout(() => {
         stopPolling();
         if (!hadVisualQr) {
           setError(
-            "Tempo limite (5 min): nenhuma imagem de QR foi recebida (só texto/código ou resposta incompleta da Evolution). " +
-              "Defina EVOLUTION_CONNECT_NUMBER no flowos-web (Railway) e faça redeploy. " +
-              "Se viu só «tempo esgotado» sem nada no meio, era provavelmente build antigo que iniciava o timer sem QR.",
+            "Tempo limite (5 min): nenhuma imagem de QR foi recebida (so texto/codigo ou resposta incompleta da Evolution). " +
+              "Defina EVOLUTION_CONNECT_NUMBER no flowos-web (Railway) e faca redeploy. " +
+              "Se viu so «tempo esgotado» sem nada no meio, era provavelmente build antigo que iniciava o timer sem QR.",
           );
         } else {
           setError(
-            "Tempo esgotado (5 min). Se já escaneou, feche o modal — a sessão pode estar ativa no manager Evolution. " +
+            "Tempo esgotado (5 min). Se ja escaneou, feche o modal — a sessao pode estar ativa no manager Evolution. " +
               "Se o QR expirou, use «Cancelar e tentar novamente».",
           );
         }
       }, 300_000);
-
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao conectar");
-      if (createdId) await rollbackIntegration(createdId);
+      setError(e instanceof Error ? e.message : "Erro ao obter QR");
     } finally {
       setConnectingQR(false);
     }
   };
 
-  const buildPayload = () =>
-    type === "WHATSAPP_META"
-      ? { type, name, ...fields, autoReply }
-      : { type, name, ...fields };
+  const deleteEvolutionIntegration = async () => {
+    if (!savedEvolutionIntegrationId) return;
+    if (
+      !confirm(
+        "Excluir esta integracao do workspace? A conta salva sera removida; sera necessario salvar de novo para parear.",
+      )
+    )
+      return;
+
+    setDeletingEvolution(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/integrations/whatsapp/${savedEvolutionIntegrationId}/delete`, { method: "DELETE" });
+      const d = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) throw new Error(d.error ?? "Erro ao excluir");
+
+      stopPolling();
+      setSavedEvolutionIntegrationId(null);
+      setQrCode(null);
+      setQrConnected(false);
+      setLastEvolutionStructured(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao excluir");
+    } finally {
+      setDeletingEvolution(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true); setError(null);
@@ -370,7 +515,86 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
                 <input value={fields["instanceName"] ?? ""} onChange={e => setF("instanceName", e.target.value)} className="input w-full" placeholder="minha-instancia" />
               </div>
 
-              {/* ── QR Code flow ─────────────────────────────────────────── */}
+              <p className="text-[10px] text-gray-500">
+                Se alterar URL, chave ou instância, salve de novo antes de gerar outro QR (o servidor usa a integração já persistida).
+              </p>
+
+              <div className="rounded-lg border border-gray-800 bg-gray-950/50 px-3 py-2 space-y-1.5 text-xs">
+                <div className="font-medium text-gray-300">Estado</div>
+                {connectingQR ? (
+                  <p className="text-amber-300 flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    Gerando QR…
+                  </p>
+                ) : qrCode && !qrConnected ? (
+                  <p className="text-emerald-300">QR pronto — escaneie no WhatsApp</p>
+                ) : lastEvolutionStructured?.breakerOpen ? (
+                  <p className="text-amber-400">Breaker ativo — aguarde ou siga a sugestão abaixo</p>
+                ) : lastEvolutionStructured?.status === "degraded" ? (
+                  <p className="text-orange-300">Instância degradada — veja mensagem e próxima ação</p>
+                ) : savedEvolutionIntegrationId ? (
+                  <p className="text-emerald-400/90">Integração salva — pode gerar o QR Code</p>
+                ) : (
+                  <p className="text-gray-500">Preencha os campos e use Salvar integração</p>
+                )}
+                {lastEvolutionStructured && (
+                  <div className="text-[10px] text-gray-500 font-mono pt-1 border-t border-gray-800/80 space-y-0.5">
+                    <div>
+                      ok: {String(lastEvolutionStructured.ok ?? "—")} · status: {lastEvolutionStructured.status ?? "—"} ·
+                      sessionState: {lastEvolutionStructured.sessionState ?? "—"}
+                    </div>
+                    {lastEvolutionStructured.responseClass != null && lastEvolutionStructured.responseClass !== "" && (
+                      <div>responseClass: {lastEvolutionStructured.responseClass}</div>
+                    )}
+                    {lastEvolutionStructured.nextSuggestedAction != null &&
+                      lastEvolutionStructured.nextSuggestedAction !== "" && (
+                        <div className="text-gray-400">{lastEvolutionStructured.nextSuggestedAction}</div>
+                      )}
+                    {lastEvolutionStructured.build != null && lastEvolutionStructured.build !== "" && (
+                      <div>build: {lastEvolutionStructured.build}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveEvolutionIntegration()}
+                  disabled={
+                    savingEvolution ||
+                    !name ||
+                    !fields["apiUrl"] ||
+                    !fields["apiKey"] ||
+                    !fields["instanceName"]
+                  }
+                  className="btn-primary w-full px-3 py-2 text-sm disabled:opacity-40"
+                >
+                  {savingEvolution ? "Salvando…" : "Salvar integração"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void generateEvolutionQR()}
+                  disabled={
+                    connectingQR ||
+                    savingEvolution ||
+                    deletingEvolution ||
+                    !savedEvolutionIntegrationId
+                  }
+                  className="btn-secondary w-full px-3 py-2 text-sm disabled:opacity-40"
+                >
+                  {connectingQR ? "Gerando QR…" : "Gerar QR Code"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteEvolutionIntegration()}
+                  disabled={!savedEvolutionIntegrationId || deletingEvolution || savingEvolution || connectingQR}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-red-900/60 text-red-300 hover:bg-red-950/40 disabled:opacity-40"
+                >
+                  {deletingEvolution ? "Excluindo…" : "Excluir integração"}
+                </button>
+              </div>
+
               {qrConnected ? (
                 <div className="flex flex-col items-center gap-2 py-4">
                   <span className="text-4xl">✅</span>
@@ -420,21 +644,14 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
                     </div>
                   )}
                   <button
+                    type="button"
                     onClick={() => { setQrCode(null); stopPolling(); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-300 py-1"
                   >
                     Cancelar e tentar novamente
                   </button>
                 </div>
-              ) : (
-                <button
-                  onClick={() => void connectEvolutionQR()}
-                  disabled={connectingQR || !name || !fields["apiUrl"] || !fields["apiKey"] || !fields["instanceName"]}
-                  className="btn-secondary w-full px-3 py-2 text-sm disabled:opacity-40"
-                >
-                  {connectingQR ? "Conectando…" : "📱 Conectar via QR Code"}
-                </button>
-              )}
+              ) : null}
             </>
           )}
 
@@ -449,7 +666,7 @@ function WAModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
           )}
           <div className="flex-1" />
           <button onClick={() => { stopPolling(); onClose(); }} className="btn-secondary px-4 py-2 text-sm">Cancelar</button>
-          {/* Evolution QR flow auto-salva. Meta precisa do Salvar manual. */}
+          {/* Evolution: salvar/QR/excluir no corpo do modal. Meta: Salvar aqui. */}
           {type === "WHATSAPP_META" && (
             <button onClick={() => void save()} disabled={saving || !name} className="btn-primary px-4 py-2 text-sm disabled:opacity-40">
               {saving ? "Salvando…" : "Salvar"}

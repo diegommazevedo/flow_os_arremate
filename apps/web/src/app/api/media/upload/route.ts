@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/session";
+import { getSessionContext, getSessionContextFromBearer } from "@/lib/session";
 import { uploadToStorage } from "@/lib/chat-media-storage";
 
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -23,7 +23,11 @@ function allowedMime(mime: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const ctx = await getSessionContext();
+  const cookieCtx = await getSessionContext();
+  const bearerCtx = cookieCtx
+    ? null
+    : await getSessionContextFromBearer(request.headers.get("authorization"));
+  const ctx = cookieCtx ?? bearerCtx;
   if (!ctx?.workspaceId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

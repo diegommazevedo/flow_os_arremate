@@ -8,14 +8,33 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 let s3Client: S3Client | null = null;
 
+function getStorageEnv() {
+  const endpoint = process.env["MINIO_ENDPOINT"];
+  const accessKeyId = process.env["MINIO_ACCESS_KEY"];
+  const secretAccessKey = process.env["MINIO_SECRET_KEY"];
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    throw new Error("MINIO storage not configured (MINIO_ENDPOINT/MINIO_ACCESS_KEY/MINIO_SECRET_KEY).");
+  }
+
+  return {
+    endpoint,
+    accessKeyId,
+    secretAccessKey,
+    region: process.env["MINIO_REGION"] ?? "us-east-1",
+    bucket: process.env["MINIO_BUCKET"] ?? "flowos",
+  };
+}
+
 function getS3(): S3Client {
   if (s3Client) return s3Client;
+  const env = getStorageEnv();
   s3Client = new S3Client({
-    endpoint: process.env["MINIO_ENDPOINT"] ?? "http://localhost:9000",
-    region: process.env["MINIO_REGION"] ?? "us-east-1",
+    endpoint: env.endpoint,
+    region: env.region,
     credentials: {
-      accessKeyId: process.env["MINIO_ACCESS_KEY"] ?? "minioadmin",
-      secretAccessKey: process.env["MINIO_SECRET_KEY"] ?? "minioadmin",
+      accessKeyId: env.accessKeyId,
+      secretAccessKey: env.secretAccessKey,
     },
     forcePathStyle: true,
   });
@@ -23,7 +42,7 @@ function getS3(): S3Client {
 }
 
 function getBucket(): string {
-  return process.env["MINIO_BUCKET"] ?? "flowos";
+  return getStorageEnv().bucket;
 }
 
 const MIME_EXT: Record<string, string> = {
@@ -46,7 +65,7 @@ export function extFromMime(mime: string): string {
 }
 
 export function buildChatMediaPublicUrl(s3Key: string): string {
-  const endpoint = (process.env["MINIO_ENDPOINT"] ?? "http://localhost:9000").replace(/\/$/, "");
+  const endpoint = getStorageEnv().endpoint.replace(/\/$/, "");
   const bucket = getBucket();
   return `${endpoint}/${bucket}/${s3Key}`;
 }

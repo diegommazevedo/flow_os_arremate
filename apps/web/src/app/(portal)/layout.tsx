@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/kanban",      label: "Kanban",        icon: "K" },
   { href: "/eisenhower",  label: "Eisenhower",    icon: "E" },
   { href: "/chat",        label: "Chat",          icon: "C" },
+  { href: "/emails",      label: "Emails",        icon: "M" },
   { href: "/interno",     label: "Interno",       icon: "I" },
   { href: "/atividades",  label: "Atividades",    icon: "A" },
   { href: "/flows",       label: "Fluxos",        icon: "F" },
@@ -29,7 +30,7 @@ type NavHref = (typeof NAV_ITEMS)[number]["href"];
 
 const getNavBadges = unstable_cache(
   async (workspaceId: string) => {
-    const [openActivities, q1Alerts, internalTotal, q1DealsCount] =
+    const [openActivities, q1Alerts, internalTotal, q1DealsCount, unreadEmails] =
       await Promise.all([
         db.task.count({ where: { workspaceId, completedAt: null } }).catch(() => 0),
         db.internalMessage.count({ where: { workspaceId, channel: { nome: "alertas-q1" } } }).catch(() => 0),
@@ -37,8 +38,9 @@ const getNavBadges = unstable_cache(
         db.deal.count({
           where: { workspaceId, closedAt: null, meta: { path: ["eisenhower"], equals: "Q1_DO" } },
         }).catch(() => 0),
+        db.email.count({ where: { workspaceId, lido: false } }).catch(() => 0),
       ]);
-    return { openActivities, q1Alerts, internalTotal, q1DealsCount };
+    return { openActivities, q1Alerts, internalTotal, q1DealsCount, unreadEmails };
   },
   ["nav-badges"],
   { revalidate: 30 },
@@ -48,7 +50,7 @@ const getNavBadges = unstable_cache(
 // Um único componente assíncrono para os 4 counts — renderiza atrás do Suspense.
 
 async function NavWithBadges({ workspaceId }: { workspaceId: string }) {
-  const { openActivities, q1Alerts, internalTotal, q1DealsCount } =
+  const { openActivities, q1Alerts, internalTotal, q1DealsCount, unreadEmails } =
     await getNavBadges(workspaceId);
 
   const badges: Partial<Record<NavHref, React.ReactNode>> = {
@@ -60,6 +62,11 @@ async function NavWithBadges({ workspaceId }: { workspaceId: string }) {
     "/eisenhower": q1DealsCount > 0 ? (
       <span style={{ background: 'var(--color-q1)', borderRadius: '99px', fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '1px 5px', color: '#fff', fontWeight: 600 }}>
         {q1DealsCount}
+      </span>
+    ) : null,
+    "/emails": unreadEmails > 0 ? (
+      <span style={{ background: 'var(--surface-overlay)', borderRadius: '99px', fontFamily: 'var(--font-mono)', fontSize: '10px', padding: '1px 5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+        {unreadEmails}
       </span>
     ) : null,
     "/interno": (q1Alerts > 0 || internalTotal > 0) ? (
