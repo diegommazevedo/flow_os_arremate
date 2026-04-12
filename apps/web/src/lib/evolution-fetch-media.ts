@@ -85,6 +85,33 @@ function decodeBase64Field(raw: string, fallbackMime: string): { buffer: Buffer;
   return { buffer: Buffer.from(trimmed, "base64"), mime: fallbackMime };
 }
 
+export function extractInlineEvolutionMediaBuffer(params: {
+  message: Record<string, unknown> | undefined;
+  fallbackMime: string;
+}): { buffer: Buffer; mime: string } | null {
+  const message = params.message;
+  if (!message || typeof message !== "object") return null;
+
+  const candidates: unknown[] = [
+    message["base64"],
+    (message["imageMessage"] as Record<string, unknown> | undefined)?.["base64"],
+    (message["videoMessage"] as Record<string, unknown> | undefined)?.["base64"],
+    (message["audioMessage"] as Record<string, unknown> | undefined)?.["base64"],
+    (message["documentMessage"] as Record<string, unknown> | undefined)?.["base64"],
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string" || candidate.trim().length < 20) continue;
+    try {
+      return decodeBase64Field(candidate, params.fallbackMime);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 function pickBase64FromJson(data: unknown): string | null {
   if (typeof data === "string" && data.length > 20) return data;
   if (!data || typeof data !== "object") return null;

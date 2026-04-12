@@ -46,8 +46,34 @@ export class EvolutionApiProvider {
   private readonly apiKey: string;
 
   constructor() {
-    this.baseUrl = process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080";
+    this.baseUrl = (process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080").replace(/\/+$/, "");
     this.apiKey = process.env["EVOLUTION_API_KEY"] ?? "";
+  }
+
+  private normalizeMediaUrlForEvolution(mediaUrl: string): string {
+    const publicMinioUrl = process.env["MINIO_PUBLIC_URL"]?.replace(/\/+$/, "");
+    if (!publicMinioUrl) return mediaUrl;
+
+    try {
+      if (mediaUrl.startsWith("/")) {
+        return `${publicMinioUrl}${mediaUrl}`;
+      }
+
+      const parsed = new URL(mediaUrl);
+      const isPrivateHost =
+        parsed.hostname.includes("railway.internal") ||
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1";
+
+      if (!isPrivateHost) return mediaUrl;
+
+      const publicBase = new URL(publicMinioUrl);
+      parsed.protocol = publicBase.protocol;
+      parsed.host = publicBase.host;
+      return parsed.toString();
+    } catch {
+      return mediaUrl;
+    }
   }
 
   async sendText(
@@ -95,6 +121,7 @@ export class EvolutionApiProvider {
     fileName?: string,
   ): Promise<void> {
     await ensureInstanceOpen(instance, { baseUrl: this.baseUrl, apiKey: this.apiKey });
+    const resolvedMediaUrl = this.normalizeMediaUrlForEvolution(mediaUrl);
 
     // Evolution v2 exige mimetype; derivamos da URL ou tipo
     const mimeMap: Record<string, string> = {
@@ -112,12 +139,12 @@ export class EvolutionApiProvider {
       : `${this.baseUrl}/message/sendMedia/${instance}`;
 
     const payload = isAudio
-      ? { number: phone, audio: mediaUrl }
+      ? { number: phone, audio: resolvedMediaUrl }
       : {
           number: phone,
           mediatype: mediaType,
           mimetype,
-          media: mediaUrl,
+          media: resolvedMediaUrl,
           caption,
           ...(fileName ? { fileName } : {}),
         };

@@ -12,6 +12,7 @@ import { decrypt } from "@/lib/encrypt";
 import { uploadChatMediaBuffer, extFromMime } from "@/lib/chat-media-storage";
 import {
   detectEvolutionMedia,
+  extractInlineEvolutionMediaBuffer,
   tryJpegThumbnail,
   fetchEvolutionMediaBuffer,
   type EvolutionMediaKind,
@@ -113,12 +114,6 @@ async function tryStoreEvolutionInboundMedia(params: {
   const mediaMeta = detectEvolutionMedia(params.message);
   if (!mediaMeta) return null;
 
-  const { baseUrl, apiKey } = evolutionHttpCtx(params.config);
-  if (!apiKey) {
-    console.warn("[webhook/evolution] sem apiKey para baixar mídia");
-    return null;
-  }
-
   console.log("[webhook/evolution]", "processando mídia", {
     messageId: params.messageId,
     kind: mediaMeta.kind,
@@ -131,20 +126,39 @@ async function tryStoreEvolutionInboundMedia(params: {
     (mediaMeta.mimetype ?? "application/octet-stream").split(";")[0]?.trim() ??
     "application/octet-stream";
 
-  const downloaded = await fetchEvolutionMediaBuffer({
-    baseUrl,
-    apiKey,
-    instance: params.instance,
-    key: params.key,
-    message: params.message ?? {},
-    convertToMp4,
+  // Preferir base64 inline do webhook (webhook_base64=true) e só cair para API quando ausente.
+  const inlineMedia = extractInlineEvolutionMediaBuffer({
+    message: params.message,
     fallbackMime: mime,
   });
 
-  if (downloaded) {
-    buf = downloaded.buffer;
-    mime = downloaded.mime.split(";")[0]?.trim() ?? mime;
-  } else if (mediaMeta.kind === "IMAGE") {
+  if (inlineMedia) {
+    buf = inlineMedia.buffer;
+    mime = inlineMedia.mime.split(";")[0]?.trim() ?? mime;
+  } else {
+    const { baseUrl, apiKey } = evolutionHttpCtx(params.config);
+    if (!apiKey) {
+      console.warn("[webhook/evolution] sem apiKey para baixar mídia");
+      return null;
+    }
+
+    const downloaded = await fetchEvolutionMediaBuffer({
+      baseUrl,
+      apiKey,
+      instance: params.instance,
+      key: params.key,
+      message: params.message ?? {},
+      convertToMp4,
+      fallbackMime: mime,
+    });
+
+    if (downloaded) {
+      buf = downloaded.buffer;
+      mime = downloaded.mime.split(";")[0]?.trim() ?? mime;
+    }
+  }
+
+  if (!buf && mediaMeta.kind === "IMAGE") {
     const thumb = tryJpegThumbnail(params.message);
     if (thumb) {
       buf = thumb.buffer;
