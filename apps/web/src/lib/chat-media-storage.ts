@@ -10,6 +10,7 @@ let s3Client: S3Client | null = null;
 
 function getStorageEnv() {
   const endpoint = process.env["MINIO_ENDPOINT"];
+  const publicUrl = process.env["MINIO_PUBLIC_URL"];
   const accessKeyId = process.env["MINIO_ACCESS_KEY"];
   const secretAccessKey = process.env["MINIO_SECRET_KEY"];
 
@@ -19,6 +20,7 @@ function getStorageEnv() {
 
   return {
     endpoint,
+    publicUrl,
     accessKeyId,
     secretAccessKey,
     region: process.env["MINIO_REGION"] ?? "us-east-1",
@@ -65,9 +67,10 @@ export function extFromMime(mime: string): string {
 }
 
 export function buildChatMediaPublicUrl(s3Key: string): string {
-  const endpoint = getStorageEnv().endpoint.replace(/\/$/, "");
+  const env = getStorageEnv();
+  const baseUrl = (env.publicUrl || env.endpoint).replace(/\/$/, "");
   const bucket = getBucket();
-  return `${endpoint}/${bucket}/${s3Key}`;
+  return `${baseUrl}/${bucket}/${s3Key}`;
 }
 
 /** Upload genérico (ex.: POST /api/media/upload) — MinIO/S3. */
