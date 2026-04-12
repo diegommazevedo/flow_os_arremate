@@ -487,7 +487,7 @@ export async function getMessages(taskId: string, workspaceId: string): Promise<
         : channelForChatLog(log),
       text:      String(out["text"] ?? inp["rawText"] ?? inp["raw"] ?? log.action),
       sentAt:    log.createdAt.getTime(),
-      author:    isOut ? "FlowOS" : String(inp["name"] ?? inp["actorId"] ?? "Cliente"),
+      author:    isOut ? "FlowOS" : String(inp["senderName"] ?? inp["name"] ?? inp["actorId"] ?? "Cliente"),
       ...(media ? { media } : {}),
     } satisfies ChatMessage;
   });

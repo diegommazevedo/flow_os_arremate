@@ -32,6 +32,8 @@ interface EvolutionWebhookPayload {
       participant?: string;
     };
     message?: Record<string, unknown>;
+    /** Evolution v2 envia base64 no nível data quando webhookBase64=true */
+    base64?: string;
     pushName?: string;
     /** Evolution v2 envia o nome do grupo aqui em mensagens de grupo */
     groupSubject?: string;
@@ -120,7 +122,7 @@ async function tryStoreEvolutionInboundMedia(params: {
     instance: params.instance,
   });
 
-  const convertToMp4 = mediaMeta.kind === "VIDEO";
+  const convertToMp4 = mediaMeta.kind === "VIDEO" || mediaMeta.kind === "AUDIO";
   let buf: Buffer | null = null;
   let mime =
     (mediaMeta.mimetype ?? "application/octet-stream").split(";")[0]?.trim() ??
@@ -574,15 +576,25 @@ function evolutionParticipantDisplayName(cleanedPushName: string, phoneKey: stri
 }
 
 export async function POST(req: NextRequest) {
-  const incomingApiKey =
-    req.headers.get("apikey") ??
-    req.headers.get("x-webhook-token") ??
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const headerApikey = req.headers.get("apikey");
+  const headerXToken = req.headers.get("x-webhook-token");
+  const headerBearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const incomingApiKey = headerApikey ?? headerXToken ?? headerBearer;
   const validWebhookToken = process.env["EVOLUTION_WEBHOOK_TOKEN"];
   const validApiKey = process.env["EVOLUTION_API_KEY"];
   const isAuthorized =
     Boolean(incomingApiKey) &&
     (incomingApiKey === validWebhookToken || incomingApiKey === validApiKey);
+
+  // TODO: remover após confirmar webhook auth funcionando
+  console.log("[webhook-auth]", {
+    headerApikey: headerApikey ? `…${headerApikey.slice(-4)}` : null,
+    headerXToken: headerXToken ? `…${headerXToken.slice(-4)}` : null,
+    headerBearer: headerBearer ? `…${headerBearer.slice(-4)}` : null,
+    envToken: validWebhookToken ? `…${validWebhookToken.slice(-4)}` : null,
+    envApiKey: validApiKey ? `…${validApiKey.slice(-4)}` : null,
+    isAuthorized,
+  });
 
   if (!isAuthorized) {
     return new Response(null, { status: 401 });
@@ -601,6 +613,12 @@ export async function POST(req: NextRequest) {
   const isGroup = remoteJid.includes("@g.us");
   const from = remoteJid.replace("@s.whatsapp.net", "").replace("@g.us", "");
   const messageRecord = payload.data.message;
+
+  // Evolution v2 com webhookBase64=true envia base64 em data.base64, não em message.base64
+  // Normalizar para que extractInlineEvolutionMediaBuffer encontre no nível message
+  if (payload.data.base64 && messageRecord && !messageRecord["base64"]) {
+    messageRecord["base64"] = payload.data.base64;
+  }
 
   const mediaMeta = detectEvolutionMedia(messageRecord);
   const textFromConv = textFromEvolutionMessage(messageRecord);
@@ -741,7 +759,8 @@ export async function POST(req: NextRequest) {
           description: mergeGroupTaskDescription(groupTask.description, {
             groupId: shortGroupId,
             groupJid,
-            groupName: groupSubject || senderName,
+            // Só atualizar groupName se temos groupSubject confirmado — evita sobrescrever com nome do remetente
+            ...(groupSubject ? { groupName: groupSubject } : {}),
             instanceName: instance,
             channel: "WA_GROUP",
             name: senderName,

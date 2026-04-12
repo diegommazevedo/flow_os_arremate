@@ -37,6 +37,7 @@ const SendBodySchema = z
         url: z.string().min(1).max(2048),
         caption: z.string().max(1024).optional(),
         fileName: z.string().max(255).optional(),
+        mimeType: z.string().max(127).optional(),
       })
       .optional(),
   })
@@ -172,6 +173,7 @@ export async function POST(request: NextRequest) {
             captionForMedia,
             workspaceId,
             media.fileName,
+            media.mimeType,
           );
         } else {
           await evolutionApi.sendText(instanceName, phone, textTrimmed, workspaceId);

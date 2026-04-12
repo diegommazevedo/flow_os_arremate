@@ -119,18 +119,19 @@ export class EvolutionApiProvider {
     caption: string,
     workspaceId: string,
     fileName?: string,
+    mimeType?: string,
   ): Promise<void> {
     await ensureInstanceOpen(instance, { baseUrl: this.baseUrl, apiKey: this.apiKey });
     const resolvedMediaUrl = this.normalizeMediaUrlForEvolution(mediaUrl);
 
-    // Evolution v2 exige mimetype; derivamos da URL ou tipo
+    // Evolution v2 exige mimetype; usar o real quando disponível
     const mimeMap: Record<string, string> = {
-      image: "image/png",
+      image: "image/jpeg",
       video: "video/mp4",
       audio: "audio/ogg",
       document: "application/pdf",
     };
-    const mimetype = mimeMap[mediaType] ?? "application/octet-stream";
+    const mimetype = mimeType ?? mimeMap[mediaType] ?? "application/octet-stream";
 
     // Áudio usa endpoint dedicado (sendWhatsAppAudio)
     const isAudio = mediaType === "audio";

@@ -274,7 +274,7 @@ function TabInfo({
 
       {/* Rodapé */}
       <div className="pt-3 flex items-center justify-between text-[10px] text-gray-600">
-        <span>Cadastro: {new Date(conv.lastAt).toLocaleDateString("pt-BR")}</span>
+        <span suppressHydrationWarning>Cadastro: {new Date(conv.lastAt).toLocaleDateString("pt-BR")}</span>
         <button onClick={copyLink} className="hover:text-gray-400 transition-colors">
           Copiar link 🔗
         </button>
@@ -354,7 +354,7 @@ function TabHistorico({ taskId }: { taskId: string }) {
                 {label}
               </span>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-gray-500 text-[10px]">
+                <span className="text-gray-500 text-[10px]" suppressHydrationWarning>
                   {new Date(e.ts).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
                 </span>
                 {durLabel && (
@@ -475,7 +475,7 @@ function TabNotas({ taskId }: { taskId: string }) {
                   🤖 Visível ao bot
                 </span>
               )}
-              <span className="text-[9px] text-gray-600 ml-auto">
+              <span className="text-[9px] text-gray-600 ml-auto" suppressHydrationWarning>
                 {new Date(nota.createdAt).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
               </span>
             </div>
@@ -683,7 +683,7 @@ function TabArquivos({ conv }: { conv: Conversation }) {
             <span className="text-lg shrink-0">{isMedia(doc.name) ? "🖼️" : "📄"}</span>
             <div className="flex-1 min-w-0">
               <p className="text-[11px] text-gray-300 truncate">{doc.name}</p>
-              <p className="text-[9px] text-gray-600">
+              <p className="text-[9px] text-gray-600" suppressHydrationWarning>
                 {new Date(doc.createdAt).toLocaleDateString("pt-BR")}
               </p>
             </div>

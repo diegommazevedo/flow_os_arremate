@@ -377,6 +377,14 @@ function Bubble({ msg }: { msg: ChatMessage }) {
           border:          isOut ? '1px solid rgba(124,106,247,0.15)' : '1px solid var(--border-subtle)',
         }}
       >
+        {!isOut && msg.author && msg.author !== "Cliente" && (
+          <p
+            className="font-semibold mb-0.5 truncate"
+            style={{ fontSize: '11px', color: 'var(--text-accent)', lineHeight: 1.3 }}
+          >
+            {msg.author}
+          </p>
+        )}
         {m?.kind === "IMAGE" && (
           <a href={m.url} target="_blank" rel="noopener noreferrer" className="block mb-2 -mx-0.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -601,6 +609,7 @@ function ChatWindow({
   const [text,      setText]     = useState("");
   const [mediaUrl,  setMediaUrl]  = useState("");
   const [mediaType, setMediaType] = useState<"image" | "audio" | "video" | "document">("image");
+  const [mediaMimeType, setMediaMimeType] = useState<string | null>(null);
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
   const [mediaUploading, setMediaUploading] = useState(false);
   const [sending,   setSending]  = useState(false);
@@ -628,6 +637,7 @@ function ChatWindow({
 
   const clearMedia = () => {
     setMediaUrl("");
+    setMediaMimeType(null);
     setMediaFileName(null);
   };
 
@@ -646,6 +656,7 @@ function ChatWindow({
       if (!d.url) throw new Error("Resposta sem URL");
       setMediaUrl(d.url);
       setMediaType(mediaTypeFromMime(file.type || "application/octet-stream"));
+      setMediaMimeType(file.type || null);
       setMediaFileName(file.name || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro no upload");
@@ -676,6 +687,7 @@ function ChatWindow({
           url:  mediaUrl.trim(),
           ...(text.trim() ? { caption: text.trim() } : {}),
           ...(mediaFileName && mediaType === "document" ? { fileName: mediaFileName } : {}),
+          ...(mediaMimeType ? { mimeType: mediaMimeType } : {}),
         };
       }
       const r = await fetch("/api/chat/send", {
@@ -1173,6 +1185,13 @@ export function ChatClient({ initial, workspaceId }: Props) {
               ).sort((a, b) => b.lastAt - a.lastAt),
             );
           });
+          // Re-fetch history when the active conversation receives a new message
+          if (d.taskId && activeIdRef.current === d.taskId) {
+            void fetch(`/api/chat/history?taskId=${d.taskId}`)
+              .then(r => (r.ok ? r.json() : Promise.resolve([])))
+              .then((data: ChatMessage[]) => { setHistory(data); })
+              .catch(() => undefined);
+          }
         }
         if (d.type === "NEW_MESSAGE" && d.taskId) {
           startTransition(() => {
@@ -1378,6 +1397,8 @@ export function ChatClient({ initial, workspaceId }: Props) {
                         setConversations(prev =>
                           prev.map(c => c.id === conv.id ? { ...c, unread: false, unreadCount: 0 } : c),
                         );
+                        // Persist read state to DB
+                        void fetch(`/api/chat/${conv.id}/read`, { method: "POST" }).catch(() => undefined);
                       }}
                     />
                   ))}
