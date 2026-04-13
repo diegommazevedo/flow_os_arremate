@@ -11,6 +11,8 @@ import { maskPhone } from "../_lib/chat-queries";
 import { ChatSidebar } from "./ChatSidebar";
 import { ChatFilters, DEFAULT_FILTERS, applyFilters, type Filters } from "./ChatFilters";
 import { ProtocolModal } from "@/components/protocol-modal";
+import { AudioRecorder } from "./AudioRecorder";
+import { UploadProgress } from "./UploadProgress";
 
 /** Preview na lista — remove *negrito*, _itá_, ~riscado~ e blocos de código WhatsApp. */
 function stripWAMarkdown(text: string): string {
@@ -612,6 +614,9 @@ function ChatWindow({
   const [mediaMimeType, setMediaMimeType] = useState<string | null>(null);
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const lastFileRef = useRef<File | Blob | null>(null);
   const [sending,   setSending]  = useState(false);
   const [error,     setError]    = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -641,25 +646,84 @@ function ChatWindow({
     setMediaFileName(null);
   };
 
+  const uploadWithProgress = useCallback((fd: FormData): Promise<{ url: string }> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/media/upload");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setUploadPercent(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+      xhr.onload = () => {
+        try {
+          const d = JSON.parse(xhr.responseText) as { url?: string; error?: string };
+          if (xhr.status >= 200 && xhr.status < 300 && d.url) {
+            setUploadPercent(100);
+            setTimeout(() => { setUploadPercent(null); setUploadError(null); }, 1200);
+            resolve({ url: d.url });
+          } else {
+            reject(new Error(d.error ?? "Erro ao enviar arquivo"));
+          }
+        } catch {
+          reject(new Error("Resposta inválida do servidor"));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Erro de conexão. Verifique sua internet"));
+      xhr.ontimeout = () => reject(new Error("Upload demorou muito. Verifique sua conexão"));
+      xhr.timeout = 120_000;
+      xhr.send(fd);
+    });
+  }, []);
+
+  const onAudioRecorded = useCallback(async (blob: Blob, durationSec: number) => {
+    lastFileRef.current = blob;
+    setMediaUploading(true);
+    setError(null);
+    setUploadPercent(0);
+    setUploadError(null);
+    try {
+      const ext = blob.type.includes("ogg") ? "ogg" : "webm";
+      const fd = new FormData();
+      fd.append("file", blob, `audio-${Date.now()}.${ext}`);
+      const { url } = await uploadWithProgress(fd);
+      setMediaUrl(url);
+      setMediaType("audio");
+      setMediaMimeType(blob.type || "audio/ogg");
+      setMediaFileName(`audio-${durationSec}s.${ext}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro no upload do áudio";
+      setError(msg);
+      setUploadError(msg);
+      setUploadPercent(null);
+      clearMedia();
+    } finally {
+      setMediaUploading(false);
+    }
+  }, [uploadWithProgress]);
+
   const onMediaFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    lastFileRef.current = file;
     setMediaUploading(true);
     setError(null);
+    setUploadPercent(0);
+    setUploadError(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await fetch("/api/media/upload", { method: "POST", body: fd });
-      const d = (await r.json()) as { url?: string; error?: string };
-      if (!r.ok) throw new Error(d.error ?? "Falha no upload");
-      if (!d.url) throw new Error("Resposta sem URL");
-      setMediaUrl(d.url);
+      const { url } = await uploadWithProgress(fd);
+      setMediaUrl(url);
       setMediaType(mediaTypeFromMime(file.type || "application/octet-stream"));
       setMediaMimeType(file.type || null);
       setMediaFileName(file.name || null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro no upload");
+      const msg = err instanceof Error ? err.message : "Erro no upload";
+      setError(msg);
+      setUploadError(msg);
+      setUploadPercent(null);
       clearMedia();
     } finally {
       setMediaUploading(false);
@@ -802,6 +866,28 @@ function ChatWindow({
 
           {/* Composer */}
           <div className="px-4 py-3 shrink-0" style={{ background: 'var(--surface-raised)', borderTop: '1px solid var(--border-subtle)' }}>
+            <UploadProgress
+              percent={uploadPercent}
+              error={uploadError}
+              onRetry={lastFileRef.current ? () => {
+                const f = lastFileRef.current;
+                if (!f) return;
+                const fd = new FormData();
+                fd.append("file", f, f instanceof File ? f.name : "file");
+                setUploadError(null);
+                setUploadPercent(0);
+                setMediaUploading(true);
+                void uploadWithProgress(fd)
+                  .then(({ url }) => { setMediaUrl(url); })
+                  .catch((err: unknown) => {
+                    const msg = err instanceof Error ? err.message : "Erro no upload";
+                    setError(msg);
+                    setUploadError(msg);
+                    setUploadPercent(null);
+                  })
+                  .finally(() => setMediaUploading(false));
+              } : undefined}
+            />
             {error && <p className="text-xs mb-2 px-1" style={{ color: 'var(--color-q1)' }}>{error}</p>}
             {conv.channel !== "RC" && (
               <div className="flex flex-wrap items-center gap-2 mb-2" style={{ fontSize: '11px', fontFamily: 'var(--font-display)' }}>
@@ -845,7 +931,7 @@ function ChatWindow({
                   </div>
                 ) : (
                   <span style={{ color: 'var(--text-tertiary)' }} className="text-[10px]">
-                    Imagem, vídeo, áudio ou PDF (até 25 MB)
+                    Imagem (25MB), vídeo (64MB), áudio (16MB), PDF (50MB)
                   </span>
                 )}
               </div>
@@ -891,32 +977,39 @@ function ChatWindow({
                 onFocus={e  => { e.currentTarget.style.borderColor = 'var(--text-accent)'; }}
                 onBlur={e   => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
               />
-              <button
-                type="button"
-                onClick={() => { void send(); }}
-                disabled={
-                  (!text.trim() && !(conv.channel !== "RC" && mediaUrl.trim())) ||
-                  sending ||
-                  mediaUploading
-                }
-                title="Enviar"
-                className="shrink-0 flex items-center justify-center rounded transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-                style={{
-                  width:      '32px',
-                  height:     '32px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: text.trim() || (conv.channel !== "RC" && mediaUrl.trim()) ? 'var(--text-accent)' : 'var(--surface-overlay)',
-                  color:      'var(--text-primary)',
-                  border:     '1px solid var(--border-subtle)',
-                }}
-                aria-label="Enviar"
-              >
-                {sending ? (
-                  <span style={{ fontSize: '14px' }}>…</span>
-                ) : (
-                  <span style={{ fontSize: '14px', fontWeight: 600 }}>→</span>
-                )}
-              </button>
+              {conv.channel !== "RC" && !text.trim() && !mediaUrl.trim() ? (
+                <AudioRecorder
+                  disabled={sending || mediaUploading}
+                  onRecorded={(blob, dur) => { void onAudioRecorded(blob, dur); }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { void send(); }}
+                  disabled={
+                    (!text.trim() && !(conv.channel !== "RC" && mediaUrl.trim())) ||
+                    sending ||
+                    mediaUploading
+                  }
+                  title="Enviar"
+                  className="shrink-0 flex items-center justify-center rounded transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                  style={{
+                    width:      '32px',
+                    height:     '32px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: text.trim() || (conv.channel !== "RC" && mediaUrl.trim()) ? 'var(--text-accent)' : 'var(--surface-overlay)',
+                    color:      'var(--text-primary)',
+                    border:     '1px solid var(--border-subtle)',
+                  }}
+                  aria-label="Enviar"
+                >
+                  {sending ? (
+                    <span style={{ fontSize: '14px' }}>…</span>
+                  ) : (
+                    <span style={{ fontSize: '14px', fontWeight: 600 }}>→</span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </>

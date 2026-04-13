@@ -477,7 +477,9 @@ export async function getMessages(taskId: string, workspaceId: string): Promise<
   return all.map(log => {
     const inp   = (log.input  as Record<string, unknown> | null) ?? {};
     const out   = (log.output as Record<string, unknown> | null) ?? {};
-    const isOut = log.action.includes("send") || log.action.includes("chat_new");
+    const isSendAction = log.action.includes("send") || log.action.includes("chat_new");
+    const isFromMe = inp["fromMe"] === true;
+    const isOut = isSendAction || isFromMe;
     const media = parseChatMedia(out["media"]);
     return {
       id:        log.id,
