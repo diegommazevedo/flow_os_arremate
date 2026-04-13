@@ -12,10 +12,10 @@ import { getSessionContext, getSessionContextFromBearer } from "@/lib/session";
 import { uploadToStorage } from "@/lib/chat-media-storage";
 
 const UPLOAD_LIMITS: Record<string, number> = {
-  image:    25 * 1024 * 1024,  // 25 MB
-  video:    64 * 1024 * 1024,  // 64 MB
-  audio:    16 * 1024 * 1024,  // 16 MB
-  document: 50 * 1024 * 1024,  // 50 MB
+  image:    50 * 1024 * 1024,  // 50 MB — GED: laudos, plantas, prints de processo
+  video:    64 * 1024 * 1024,  // 64 MB — limite real WhatsApp
+  audio:    16 * 1024 * 1024,  // 16 MB — limite WhatsApp
+  document: 50 * 1024 * 1024,  // 50 MB — GED: contratos, matrículas, PDFs multi-página
 };
 
 function mediaCategory(mime: string): "image" | "video" | "audio" | "document" | null {

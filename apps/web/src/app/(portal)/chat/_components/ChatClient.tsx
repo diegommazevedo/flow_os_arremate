@@ -13,6 +13,7 @@ import { ChatFilters, DEFAULT_FILTERS, applyFilters, type Filters } from "./Chat
 import { ProtocolModal } from "@/components/protocol-modal";
 import { AudioRecorder } from "./AudioRecorder";
 import { UploadProgress } from "./UploadProgress";
+import { DropZone } from "./DropZone";
 
 /** Preview na lista — remove *negrito*, _itá_, ~riscado~ e blocos de código WhatsApp. */
 function stripWAMarkdown(text: string): string {
@@ -702,6 +703,34 @@ function ChatWindow({
     }
   }, [uploadWithProgress]);
 
+  const onFilesDropped = useCallback((files: File[]) => {
+    if (conv.channel === "RC") return;
+    const file = files[0];
+    if (!file) return;
+    lastFileRef.current = file;
+    setMediaUploading(true);
+    setError(null);
+    setUploadPercent(0);
+    setUploadError(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    void uploadWithProgress(fd)
+      .then(({ url }) => {
+        setMediaUrl(url);
+        setMediaType(mediaTypeFromMime(file.type || "application/octet-stream"));
+        setMediaMimeType(file.type || null);
+        setMediaFileName(file.name || null);
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : "Erro no upload";
+        setError(msg);
+        setUploadError(msg);
+        setUploadPercent(null);
+        clearMedia();
+      })
+      .finally(() => setMediaUploading(false));
+  }, [conv.channel, uploadWithProgress]);
+
   const onMediaFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -849,7 +878,7 @@ function ChatWindow({
       {useEmbed && conv.roomId ? (
         <RocketChatFrame roomId={conv.roomId} />
       ) : (
-        <>
+        <DropZone disabled={conv.channel === "RC"} onFilesDropped={onFilesDropped}>
           <div
             className="flex-1 overflow-y-auto px-4 py-3 space-y-0 min-h-0"
             style={{ background: 'var(--surface-base)' }}
@@ -931,7 +960,7 @@ function ChatWindow({
                   </div>
                 ) : (
                   <span style={{ color: 'var(--text-tertiary)' }} className="text-[10px]">
-                    Imagem (25MB), vídeo (64MB), áudio (16MB), PDF (50MB)
+                    Imagem (50MB), vídeo (64MB), áudio (16MB), PDF (50MB)
                   </span>
                 )}
               </div>
@@ -956,6 +985,43 @@ function ChatWindow({
                     return;
                   }
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); }
+                }}
+                onPaste={e => {
+                  if (conv.channel === "RC") return;
+                  const items = e.clipboardData?.items;
+                  if (!items) return;
+                  for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if (item && item.type.startsWith("image/")) {
+                      e.preventDefault();
+                      const blob = item.getAsFile();
+                      if (!blob) return;
+                      const file = new File([blob], `paste-${Date.now()}.png`, { type: blob.type || "image/png" });
+                      lastFileRef.current = file;
+                      setMediaUploading(true);
+                      setError(null);
+                      setUploadPercent(0);
+                      setUploadError(null);
+                      const fd = new FormData();
+                      fd.append("file", file);
+                      void uploadWithProgress(fd)
+                        .then(({ url }) => {
+                          setMediaUrl(url);
+                          setMediaType("image");
+                          setMediaMimeType(file.type);
+                          setMediaFileName(file.name);
+                        })
+                        .catch((err: unknown) => {
+                          const msg = err instanceof Error ? err.message : "Erro no upload";
+                          setError(msg);
+                          setUploadError(msg);
+                          setUploadPercent(null);
+                          clearMedia();
+                        })
+                        .finally(() => setMediaUploading(false));
+                      return;
+                    }
+                  }
                 }}
                 rows={2}
                 placeholder="Escreva uma mensagem"
@@ -1012,7 +1078,7 @@ function ChatWindow({
               )}
             </div>
           </div>
-        </>
+        </DropZone>
       )}
 
       <ProtocolModal
