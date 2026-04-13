@@ -57,6 +57,16 @@ model Workspace {
   internalMessages InternalMessage[]
   emailAccounts    EmailAccount[]
   emails           Email[]
+  partners            Partner[]
+  fieldAgentProfiles  FieldAgentProfile[]
+  fieldAssignments    FieldAssignment[]
+  fieldEvidences      FieldEvidence[]
+  propertyDossiers    PropertyDossier[]
+  dossierDocuments    DossierDocument[]
+  tags                Tag[]
+  contactTags         ContactTag[]
+  campaigns           Campaign[]
+  campaignItems       CampaignItem[]
 
   @@map("workspaces")
 }
@@ -79,6 +89,8 @@ enum MemberRole {
   ADMIN
   MEMBER
   VIEWER
+  /// Acesso global: gestão de workspaces (painel admin).
+  SUPER_ADMIN
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +145,9 @@ model Deal {
   internalChannels InternalChannel[]
   internalMessages InternalMessage[]
   protocolSeq Int       @default(0)
+  fieldAssignments FieldAssignment[]
+  propertyDossier  PropertyDossier?
+  campaignItems    CampaignItem[]
 
   @@index([workspaceId, stageId])
   @@index([workspaceId, ownerId])
@@ -176,12 +191,16 @@ model Contact {
   phone       String?
   document    String?  // CPF/CNPJ (armazenado encriptado — SEC-11)
   type        ContactType @default(PERSON)
+  /// Ciclo comercial do lead no cockpit (PROSPECT → LEAD → ACTIVE).
+  leadLifecycle LeadLifecycle @default(PROSPECT)
   meta        Json     @default("{}")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   deals       Deal[]
+  contactTags ContactTag[]
+  campaignItems CampaignItem[]
 
   @@index([workspaceId])
   @@index([workspaceId, phone])  // resolveOrCreateContact dedup
@@ -191,6 +210,12 @@ model Contact {
 enum ContactType {
   PERSON
   COMPANY
+}
+
+enum LeadLifecycle {
+  PROSPECT
+  LEAD
+  ACTIVE
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -809,4 +834,309 @@ model BrainUsageMetric {
 
   @@unique([workspaceId, month, model])
   @@map("brain_usage_metrics")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 10 — PARCEIROS + PIPELINE MOTOBOY/FIELD AGENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Partner {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  phone       String?
+  email       String?
+  document    String?     // CPF/CNPJ
+  type        PartnerType
+  isActive    Boolean     @default(true)
+  meta        Json        @default("{}")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  fieldAgentProfile FieldAgentProfile?
+
+  @@unique([workspaceId, phone])
+  @@index([workspaceId])
+  @@index([workspaceId, type])
+  @@map("partners")
+}
+
+enum PartnerType {
+  LEILOEIRO
+  CORRETOR
+  DESPACHANTE
+  FIELD_AGENT
+  EXTERNO
+}
+
+model FieldAgentProfile {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  partnerId     String            @unique
+  cities        String[]
+  states        String[]
+  pricePerVisit Decimal           @db.Decimal(10, 2)
+  currency      String            @default("BRL")
+  avgRating     Decimal?          @db.Decimal(3, 2)
+  totalJobs     Int               @default(0)
+  availability  AgentAvailability @default(AVAILABLE)
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  partner     Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  assignments FieldAssignment[]
+
+  @@index([workspaceId])
+  @@index([states])
+  @@map("field_agent_profiles")
+}
+
+enum AgentAvailability {
+  AVAILABLE
+  BUSY
+  INACTIVE
+}
+
+model FieldAssignment {
+  id            String           @id @default(cuid())
+  workspaceId   String
+  dealId        String
+  agentId       String
+  status        AssignmentStatus @default(PENDING_CONTACT)
+  contactedAt   DateTime?
+  acceptedAt    DateTime?
+  completedAt   DateTime?
+  rejectedAt    DateTime?
+  rejectionNote String?
+  priceAgreed   Decimal?         @db.Decimal(10, 2)
+  waMessageId   String?
+  evidenceCount Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  workspace  Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal       Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  agent      FieldAgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  evidences  FieldEvidence[]
+
+  @@index([workspaceId])
+  @@index([dealId])
+  @@index([agentId])
+  @@map("field_assignments")
+}
+
+enum AssignmentStatus {
+  PENDING_CONTACT
+  CONTACTED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  NO_RESPONSE
+  CANCELLED
+}
+
+model FieldEvidence {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  assignmentId String
+  dealId       String
+  type         EvidenceType
+  mediaUrl     String
+  mediaKey     String
+  mimeType     String
+  description  String?
+  aiAnalysis   Json?
+  capturedAt   DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+
+  workspace  Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignment FieldAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, dealId])
+  @@index([assignmentId])
+  @@map("field_evidences")
+}
+
+enum EvidenceType {
+  PHOTO_EXTERIOR
+  PHOTO_SURROUNDINGS
+  PHOTO_ACCESS
+  VIDEO_EXTERIOR
+  VIDEO_SURROUNDINGS
+  AUDIO_DESCRIPTION
+  DOCUMENT_PHOTO
+}
+
+model PropertyDossier {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  dealId         String        @unique
+  clientId       String?
+  status         DossierStatus @default(DRAFT)
+  fieldScore     Decimal?      @db.Decimal(4, 2)
+  riskScore      Decimal?      @db.Decimal(4, 2)
+  aiSummary      String?
+  reportUrl      String?
+  reportKey      String?
+  generatedAt    DateTime?
+  sharedWithLead Boolean       @default(false)
+  sharedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal      Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  documents DossierDocument[]
+
+  @@index([workspaceId])
+  @@map("property_dossiers")
+}
+
+enum DossierStatus {
+  DRAFT
+  FIELD_PENDING
+  FIELD_COMPLETE
+  DOCS_PENDING
+  READY
+  GENERATED
+  SHARED
+}
+
+model DossierDocument {
+  id          String       @id @default(cuid())
+  workspaceId String
+  dossierId   String
+  type        DocumentType
+  name        String
+  mediaUrl    String
+  mediaKey    String
+  mimeType    String
+  issuedAt    DateTime?
+  expiresAt   DateTime?
+  uploadedAt  DateTime     @default(now())
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dossier   PropertyDossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, dossierId])
+  @@map("dossier_documents")
+}
+
+enum DocumentType {
+  MATRICULA
+  CERTIDAO_ONUS
+  CERTIDAO_ACOES
+  CERTIDAO_DEBITOS
+  EXTRATO_FGTS
+  DEBITOS_MUNICIPAIS
+  ITBI
+  OUTRO
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COCKPIT — etiquetas, campanhas em massa (leads / motoboy / dossiê)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Tag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String   @default("#888888")
+  createdAt   DateTime @default(now())
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts  ContactTag[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("tags")
+}
+
+model ContactTag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  contactId   String
+  tagId       String
+  addedAt     DateTime @default(now())
+  addedBy     String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, tagId])
+  @@index([workspaceId])
+  @@map("contact_tags")
+}
+
+model Campaign {
+  id           String         @id @default(cuid())
+  workspaceId  String
+  name         String
+  type         CampaignType   @default(DOSSIER)
+  status       CampaignStatus @default(DRAFT)
+  totalLeads   Int            @default(0)
+  sentCount    Int            @default(0)
+  doneCount    Int            @default(0)
+  ratePerHour  Int            @default(20)
+  scheduledAt  DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  /// Payload extra: waMessage, filtros usados na criação, etc.
+  meta         Json           @default("{}")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  items     CampaignItem[]
+
+  @@index([workspaceId])
+  @@map("campaigns")
+}
+
+enum CampaignType {
+  DOSSIER
+  WA_MESSAGE
+  WA_TEMPLATE
+}
+
+enum CampaignStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+model CampaignItem {
+  id          String             @id @default(cuid())
+  workspaceId String
+  campaignId  String
+  contactId   String
+  dealId      String?
+  status      CampaignItemStatus @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  error       String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  deal      Deal?     @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, contactId])
+  @@index([workspaceId, campaignId])
+  @@map("campaign_items")
+}
+
+enum CampaignItemStatus {
+  PENDING
+  RUNNING
+  DONE
+  ERROR
+  SKIPPED
 }

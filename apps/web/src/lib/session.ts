@@ -8,15 +8,16 @@ import "server-only";
 import { cookies, headers } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { db } from "@flow-os/db";
+import type { MemberRole } from "@flow-os/db";
 
 export interface SessionContext {
   workspaceId: string;
   userId: string | null;
-  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" | "DEV";
+  role: MemberRole | "DEV";
 }
 
 async function resolveMemberSession(userId: string): Promise<SessionContext | null> {
-  let member: { workspaceId: string; role: SessionContext["role"] } | null = null;
+  let member: { workspaceId: string; role: MemberRole } | null = null;
   try {
     member = await db.member.findFirst({
       where: { userId },
