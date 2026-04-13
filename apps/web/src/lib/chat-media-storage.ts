@@ -28,11 +28,16 @@ function getStorageEnv() {
   };
 }
 
+function normalizeEndpoint(raw: string): string {
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `http://${raw}`;
+}
+
 function getS3(): S3Client {
   if (s3Client) return s3Client;
   const env = getStorageEnv();
   s3Client = new S3Client({
-    endpoint: env.endpoint,
+    endpoint: normalizeEndpoint(env.endpoint),
     region: env.region,
     credentials: {
       accessKeyId: env.accessKeyId,
