@@ -647,6 +647,26 @@ function ChatWindow({
     setMediaFileName(null);
   };
 
+  const CLIENT_UPLOAD_LIMITS: Record<string, number> = {
+    image: 50 * 1024 * 1024,
+    video: 64 * 1024 * 1024,
+    audio: 16 * 1024 * 1024,
+    document: 50 * 1024 * 1024,
+  };
+
+  const validateFileSize = useCallback((file: File | Blob): string | null => {
+    const mime = (file instanceof File ? file.type : file.type) || "application/octet-stream";
+    const category = mime.startsWith("image/") ? "image"
+      : mime.startsWith("video/") ? "video"
+      : mime.startsWith("audio/") ? "audio"
+      : "document";
+    const limit = CLIENT_UPLOAD_LIMITS[category] ?? 50 * 1024 * 1024;
+    if (file.size > limit) {
+      return `Arquivo muito grande. Máximo: ${Math.round(limit / (1024 * 1024))} MB`;
+    }
+    return null;
+  }, []);
+
   const uploadWithProgress = useCallback((fd: FormData): Promise<{ url: string }> => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -672,12 +692,15 @@ function ChatWindow({
       };
       xhr.onerror = () => reject(new Error("Erro de conexão. Verifique sua internet"));
       xhr.ontimeout = () => reject(new Error("Upload demorou muito. Verifique sua conexão"));
+      xhr.onabort = () => reject(new Error("Upload cancelado"));
       xhr.timeout = 120_000;
       xhr.send(fd);
     });
   }, []);
 
   const onAudioRecorded = useCallback(async (blob: Blob, durationSec: number) => {
+    const sizeErr = validateFileSize(blob);
+    if (sizeErr) { setError(sizeErr); return; }
     lastFileRef.current = blob;
     setMediaUploading(true);
     setError(null);
@@ -707,6 +730,8 @@ function ChatWindow({
     if (conv.channel === "RC") return;
     const file = files[0];
     if (!file) return;
+    const sizeErr = validateFileSize(file);
+    if (sizeErr) { setError(sizeErr); return; }
     lastFileRef.current = file;
     setMediaUploading(true);
     setError(null);
@@ -735,6 +760,8 @@ function ChatWindow({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const sizeErr = validateFileSize(file);
+    if (sizeErr) { setError(sizeErr); return; }
     lastFileRef.current = file;
     setMediaUploading(true);
     setError(null);
@@ -997,6 +1024,8 @@ function ChatWindow({
                       const blob = item.getAsFile();
                       if (!blob) return;
                       const file = new File([blob], `paste-${Date.now()}.png`, { type: blob.type || "image/png" });
+                      const sizeErr = validateFileSize(file);
+                      if (sizeErr) { setError(sizeErr); return; }
                       lastFileRef.current = file;
                       setMediaUploading(true);
                       setError(null);
