@@ -67,6 +67,7 @@ model Workspace {
   contactTags         ContactTag[]
   campaigns           Campaign[]
   campaignItems       CampaignItem[]
+  dealParallels       DealParallel[]
 
   @@map("workspaces")
 }
@@ -148,10 +149,44 @@ model Deal {
   fieldAssignments FieldAssignment[]
   propertyDossier  PropertyDossier?
   campaignItems    CampaignItem[]
+  dealParallels    DealParallel[]
 
   @@index([workspaceId, stageId])
   @@index([workspaceId, ownerId])
   @@map("deals")
+}
+
+/// Processos paralelos condicionais (não são stages lineares do funil).
+model DealParallel {
+  id          String          @id @default(cuid())
+  workspaceId String
+  dealId      String
+  type        ParallelType
+  status      ParallelStatus  @default(INACTIVE)
+  activatedAt DateTime?
+  completedAt DateTime?
+  meta        Json            @default("{}")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, type])
+  @@index([workspaceId])
+  @@map("deal_parallels")
+}
+
+enum ParallelType {
+  CONDOMINIO
+  AVERBACAO
+  DESOCUPACAO
+}
+
+enum ParallelStatus {
+  INACTIVE
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

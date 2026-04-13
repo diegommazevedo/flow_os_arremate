@@ -5,11 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { db } from "@flow-os/db";
 import { getSessionContext } from "@/lib/session";
-import {
-  BOOTSTRAP_DEPARTMENTS_CAIXA,
-  BOOTSTRAP_DEPARTMENTS_GENERIC,
-  BOOTSTRAP_STAGES,
-} from "@/lib/workspace-bootstrap";
+import { bootstrapWorkspaceContent } from "@/lib/workspace-bootstrap";
 
 async function requireSuperAdmin() {
   const ctx = await getSessionContext();
@@ -73,25 +69,7 @@ export async function POST(req: NextRequest) {
     const ws = await tx.workspace.create({
       data: { name, slug, sector, settings: {} },
     });
-    for (const [index, stage] of BOOTSTRAP_STAGES.entries()) {
-      await tx.stage.create({
-        data: {
-          workspaceId: ws.id,
-          name: stage.label,
-          color: stage.color,
-          position: index,
-          slaDays: index < 4 ? 7 : 15,
-          isWon: "isWon" in stage && Boolean(stage.isWon),
-          isLost: false,
-        },
-      });
-    }
-    const depts = template === "caixa" ? BOOTSTRAP_DEPARTMENTS_CAIXA : BOOTSTRAP_DEPARTMENTS_GENERIC;
-    for (const nome of depts) {
-      await tx.department.create({
-        data: { workspaceId: ws.id, nome, membros: [] },
-      });
-    }
+    await bootstrapWorkspaceContent(tx, ws.id, template === "caixa" ? "caixa" : "generic");
     return ws;
   });
 

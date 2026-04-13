@@ -1,8 +1,8 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import type { AgentPersona, FlowDefinition, SectorTemplate, StageConfig } from "./engine";
 import { globalRegistry } from "./engine";
 
-const PIPELINE_STAGE_COLORS = [
+export const PIPELINE_STAGE_COLORS = [
   "#94a3b8",
   "#64748b",
   "#475569",
@@ -19,6 +19,11 @@ const PIPELINE_STAGE_COLORS = [
   "#f97316",
   "#22c55e",
 ] as const;
+
+/** SLA em dias por etapa (1–15). Último estágio ganho: null. */
+export const CAIXA_PIPELINE_SLA_DAYS: readonly (number | null)[] = [
+  2, 3, 5, 3, 10, 15, 2, 20, 30, 15, 10, 5, 30, 5, null,
+];
 
 export const PIPELINE_STAGES = [
   { id: "captado",                      label: "Captado",                         order: 1 },
@@ -594,12 +599,15 @@ export const CONTRACT_RISK_BOT: ContractRiskBotConfig = {
   ],
 };
 
-export const ETAPA_STAGES: StageConfig[] = PIPELINE_STAGES.map((stage, index) => ({
-  name: stage.label,
-  color: PIPELINE_STAGE_COLORS[index] ?? "#64748b",
-  slaDays: index < 4 ? 7 : 15,
-  ...(stage.id === "processo_concluido" ? { isWon: true } : {}),
-}));
+export const ETAPA_STAGES: StageConfig[] = PIPELINE_STAGES.map((stage, index) => {
+  const sla = CAIXA_PIPELINE_SLA_DAYS[index];
+  return {
+    name: stage.label,
+    color: PIPELINE_STAGE_COLORS[index] ?? "#64748b",
+    ...(sla != null ? { slaDays: sla } : {}),
+    ...(stage.id === "processo_concluido" ? { isWon: true } : {}),
+  };
+});
 
 const DEFAULT_FLOWS: FlowDefinition[] = [
   {
@@ -689,6 +697,89 @@ export interface FlowTemplate extends SectorTemplate {
   extendedLabels: ExtendedLabels;
   contractRiskBot: ContractRiskBotConfig;
 }
+
+// ── PARTE 7: Regra Tudo ou Nada (boleto) ──────────────────────────────────
+// Quando Deal entra em AGUARDANDO_CONFIRMACAO_CAIXA, registrar deadline.
+// Se prazo expirar sem pagamento confirmado: CANCELLED.
+
+export interface BoletoExpiryRule {
+  /** Horas antes do vencimento para alertas WA */
+  alertThresholds: number[];
+  /** Ação quando expira */
+  onExpiry: {
+    dealStatus: "CANCELLED";
+    clientStatus: "ARCHIVED";
+    auditAction: "DEAL_CANCELLED_NO_PAYMENT";
+    waMessage: string;
+    preserveDossier: true;
+  };
+}
+
+export const BOLETO_EXPIRY_RULE: BoletoExpiryRule = {
+  alertThresholds: [48, 24], // horas antes do vencimento
+  onExpiry: {
+    dealStatus: "CANCELLED",
+    clientStatus: "ARCHIVED",
+    auditAction: "DEAL_CANCELLED_NO_PAYMENT",
+    waMessage: "Prazo para pagamento do boleto expirado. O imóvel retorna ao leilão. Seu dossiê foi mantido para consulta futura.",
+    preserveDossier: true, // PropertyDossier nunca é deletado
+  },
+};
+
+/**
+ * Avalia se um Deal deve ser cancelado por expiração de boleto.
+ * Retorna true se o prazo expirou sem confirmação de pagamento.
+ * [P-02] paymentDeadline fica em Deal.meta.
+ */
+export function evaluateBoletoExpiry(meta: Record<string, unknown>): {
+  expired: boolean;
+  hoursRemaining: number | null;
+  shouldAlert: boolean;
+  alertLevel: 48 | 24 | null;
+} {
+  const deadline = meta["paymentDeadline"] ?? meta["dataVencimentoBoleto"];
+  const boletoStatus = meta["boletoStatus"] as string | undefined;
+
+  if (!deadline || boletoStatus === "PAGO") {
+    return { expired: false, hoursRemaining: null, shouldAlert: false, alertLevel: null };
+  }
+
+  const deadlineDate = new Date(deadline as string);
+  const now = new Date();
+  const hoursRemaining = (deadlineDate.getTime() - now.getTime()) / (60 * 60 * 1000);
+
+  if (hoursRemaining <= 0) {
+    return { expired: true, hoursRemaining: 0, shouldAlert: false, alertLevel: null };
+  }
+
+  for (const threshold of BOLETO_EXPIRY_RULE.alertThresholds) {
+    if (hoursRemaining <= threshold) {
+      return {
+        expired: false,
+        hoursRemaining,
+        shouldAlert: true,
+        alertLevel: threshold as 48 | 24,
+      };
+    }
+  }
+
+  return { expired: false, hoursRemaining, shouldAlert: false, alertLevel: null };
+}
+
+// ── PARTE 3: Configuração de automação de field agents ────────────────────
+
+export const FIELD_AGENT_CONFIG = {
+  /** Stage que dispara o despacho de motoboys */
+  triggerStage: "captado" as const,
+  /** Número de agentes a selecionar por Deal */
+  agentsPerDeal: 3,
+  /** Horas sem resposta antes de marcar NO_RESPONSE */
+  noResponseTimeoutHours: 2,
+  /** Mínimo de evidências para considerar completo */
+  minEvidenceCount: 5,
+  /** Prazo default para entrega (horas) */
+  defaultDeadlineHours: 48,
+} as const;
 
 export const RealEstateCaixaTemplate: FlowTemplate = {
   id: "real_estate_caixa",

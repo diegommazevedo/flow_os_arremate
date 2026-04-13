@@ -7,24 +7,17 @@ import {
   ProtocolChannel,
   TaskPriority,
 } from "@prisma/client";
-import { UF_DEPARTMENT_MAP } from "@flow-os/templates";
+import {
+  CAIXA_PIPELINE_SLA_DAYS,
+  DEAL_PARALLEL_TYPES,
+  PIPELINE_STAGE_COLORS,
+  PIPELINE_STAGES,
+  desiredParallelActivation,
+  UF_DEPARTMENT_MAP,
+} from "@flow-os/templates";
+import { ParallelStatus } from "@prisma/client";
 
 const db = new PrismaClient();
-
-const PIPELINE_STAGES = [
-  { id: "triagem",             label: "Triagem",                        color: "#64748b" },
-  { id: "sem_acesso_grupo",    label: "Sem Acesso ao Grupo",            color: "#475569" },
-  { id: "primeiro_contato",    label: "1º Contato c/ Cliente",          color: "#0f766e" },
-  { id: "fgts_contratacao",    label: "FGTS Contratação",               color: "#0ea5e9" },
-  { id: "itbi",                label: "phase_tax",                      color: "#f59e0b" },
-  { id: "escritura",           label: "deed_event",                     color: "#8b5cf6" },
-  { id: "registro",            label: "deal_item_registry",             color: "#2563eb" },
-  { id: "troca_titularidade",  label: "Troca de Titularidade",          color: "#ec4899" },
-  { id: "envio_docs_cef",      label: "Envio Docs para CEF",            color: "#06b6d4" },
-  { id: "docs_aguardando_cef", label: "Docs Enviados / Aguardando CEF", color: "#14b8a6" },
-  { id: "emissao_nf",          label: "Emissão NF",                     color: "#f97316" },
-  { id: "processo_concluido",  label: "Processo Concluído",             color: "#22c55e", isWon: true },
-] as const;
 
 const DEMO_DEALS = [
   {
@@ -171,9 +164,9 @@ const CANAIS_INTERNOS = [
 ] as const;
 
 const PHASE_TO_STAGE_LABEL: Record<(typeof DEMO_DEALS)[number]["phase"], string> = {
-  registro: "deal_item_registry",
-  escritura: "deed_event",
-  itbi: "phase_tax",
+  registro: "Registro de Imóveis",
+  escritura: "Escritura Pública Contratação",
+  itbi: "ITBI",
 };
 
 function addDays(days: number): Date {
@@ -243,23 +236,26 @@ async function main() {
   });
   console.log(`  Evolution integration: ${evolutionIntegration.id}`);
 
-  for (const [index, stage] of PIPELINE_STAGES.entries()) {
+  for (const stage of PIPELINE_STAGES) {
+    const index = stage.order - 1;
+    const color = PIPELINE_STAGE_COLORS[index] ?? "#64748b";
+    const sla = CAIXA_PIPELINE_SLA_DAYS[index];
     await db.stage.upsert({
       where: { workspaceId_position: { workspaceId: workspace.id, position: index } },
       update: {
         name: stage.label,
-        color: stage.color,
-        slaDays: index < 4 ? 7 : 15,
-        isWon: Boolean("isWon" in stage && stage.isWon),
+        color,
+        slaDays: sla ?? null,
+        isWon: stage.id === "processo_concluido",
         isLost: false,
       },
       create: {
         workspaceId: workspace.id,
         name: stage.label,
-        color: stage.color,
+        color,
         position: index,
-        slaDays: index < 4 ? 7 : 15,
-        isWon: Boolean("isWon" in stage && stage.isWon),
+        slaDays: sla ?? null,
+        isWon: stage.id === "processo_concluido",
         isLost: false,
       },
     });
@@ -473,6 +469,8 @@ async function main() {
           atendimentoRevisado: index % 2 === 0,
           pipedriveId: 1000 + index,
           pipedriveOrigemId: `csv-demo-${index + 1}`,
+          ...(index === 0 ? { averbacao: "A realizar" } : {}),
+          ...(index === 1 ? { isOcupado: true } : {}),
         },
       },
       create: {
@@ -498,6 +496,8 @@ async function main() {
           eisenhower: seedDeal.eisenhower,
           stagnatedDays: seedDeal.eisenhower === "Q1_DO" ? 9 : 4,
           linkGrupoWhatsApp: `https://chat.whatsapp.com/demo-${index + 1}`,
+          ...(index === 0 ? { averbacao: "A realizar" } : {}),
+          ...(index === 1 ? { isOcupado: true } : {}),
           condominio: {
             possui: true,
             status: seedDeal.condStatus,
@@ -531,6 +531,22 @@ async function main() {
         },
       },
     });
+
+    const desiredPar = desiredParallelActivation(deal.meta as Record<string, unknown>);
+    for (const type of DEAL_PARALLEL_TYPES) {
+      const status =
+        desiredPar[type] === "PENDING" ? ParallelStatus.PENDING : ParallelStatus.INACTIVE;
+      await db.dealParallel.upsert({
+        where: { dealId_type: { dealId: deal.id, type } },
+        create: {
+          workspaceId: workspace.id,
+          dealId: deal.id,
+          type,
+          status,
+        },
+        update: { status, workspaceId: workspace.id },
+      });
+    }
 
     const task = await db.task.upsert({
       where: { id: `seed-task-${index + 1}` },
@@ -782,7 +798,81 @@ async function main() {
     });
   }
 
-  console.log(`  ${PIPELINE_STAGES.length} stages configurados`);
+  // ── PARTE 8: Seed de 20 motoboys fictícios ──────────────────────────────
+
+  const MOCK_FIELD_AGENTS = [
+    { nome: "Carlos Moto SP",      telefone: "11999990001", cidade: "São Paulo",        uf: "SP", valor: 80 },
+    { nome: "Ana Rider RJ",        telefone: "21988880002", cidade: "Rio de Janeiro",    uf: "RJ", valor: 90 },
+    { nome: "João Vistoria MG",    telefone: "31977770003", cidade: "Belo Horizonte",    uf: "MG", valor: 75 },
+    { nome: "Maria Campo ES",      telefone: "27966660004", cidade: "Vitória",           uf: "ES", valor: 85 },
+    { nome: "Pedro Express PR",    telefone: "41955550005", cidade: "Curitiba",          uf: "PR", valor: 70 },
+    { nome: "Julia Sul SC",        telefone: "48944440006", cidade: "Florianópolis",     uf: "SC", valor: 80 },
+    { nome: "Rafael Gaucho RS",    telefone: "51933330007", cidade: "Porto Alegre",      uf: "RS", valor: 75 },
+    { nome: "Fernanda Centro GO",  telefone: "62922220008", cidade: "Goiânia",           uf: "GO", valor: 65 },
+    { nome: "Lucas Capital DF",    telefone: "61911110009", cidade: "Brasília",          uf: "DF", valor: 95 },
+    { nome: "Bruna Norte PA",      telefone: "91900000010", cidade: "Belém",             uf: "PA", valor: 100 },
+    { nome: "Diego Interior SP",   telefone: "19988880011", cidade: "Campinas",          uf: "SP", valor: 85 },
+    { nome: "Camila Litoral RJ",   telefone: "22977770012", cidade: "Niterói",           uf: "RJ", valor: 95 },
+    { nome: "Roberto Zona Sul SP", telefone: "11966660013", cidade: "São Paulo",         uf: "SP", valor: 90 },
+    { nome: "Patricia Minas MG",   telefone: "35955550014", cidade: "Poços de Caldas",   uf: "MG", valor: 70 },
+    { nome: "Marcos Paranaense PR",telefone: "43944440015", cidade: "Londrina",          uf: "PR", valor: 65 },
+    { nome: "Vanessa Sul RS",      telefone: "54933330016", cidade: "Caxias do Sul",     uf: "RS", valor: 80 },
+    { nome: "Thiago Cerrado GO",   telefone: "64922220017", cidade: "Rio Verde",         uf: "GO", valor: 60 },
+    { nome: "Amanda Santos SP",    telefone: "13911110018", cidade: "Santos",            uf: "SP", valor: 85 },
+    { nome: "Felipe JF MG",       telefone: "32900000019", cidade: "Juiz de Fora",      uf: "MG", valor: 75 },
+    { nome: "Larissa Campestre SC",telefone: "47988880020", cidade: "Joinville",         uf: "SC", valor: 70 },
+  ] as const;
+
+  let fieldAgentCount = 0;
+  for (const agent of MOCK_FIELD_AGENTS) {
+    const partnerId = `seed-partner-fa-${agent.telefone}`;
+    await db.partner.upsert({
+      where: { workspaceId_phone: { workspaceId: workspace.id, phone: agent.telefone } },
+      update: {
+        name: agent.nome,
+        type: "FIELD_AGENT",
+        isActive: true,
+      },
+      create: {
+        id: partnerId,
+        workspaceId: workspace.id,
+        name: agent.nome,
+        phone: agent.telefone,
+        type: "FIELD_AGENT",
+        isActive: true,
+      },
+    });
+
+    const partnerRecord = await db.partner.findUnique({
+      where: { workspaceId_phone: { workspaceId: workspace.id, phone: agent.telefone } },
+      select: { id: true },
+    });
+    if (!partnerRecord) continue;
+
+    await db.fieldAgentProfile.upsert({
+      where: { partnerId: partnerRecord.id },
+      update: {
+        cities: [agent.cidade],
+        states: [agent.uf],
+        pricePerVisit: agent.valor,
+        availability: "AVAILABLE",
+      },
+      create: {
+        workspaceId: workspace.id,
+        partnerId: partnerRecord.id,
+        cities: [agent.cidade],
+        states: [agent.uf],
+        pricePerVisit: agent.valor,
+        currency: "BRL",
+        availability: "AVAILABLE",
+      },
+    });
+    fieldAgentCount++;
+  }
+
+  console.log(`  ${fieldAgentCount} field agents (motoboys) configurados`);
+
+  console.log(`  ${PIPELINE_STAGES.length} etapas de pipeline configuradas`);
   console.log(`  ${DEPARTAMENTOS.length} departamentos configurados`);
   console.log(`  ${TAGS.length} tags configuradas`);
   console.log(`  ${RESPOSTAS.length} respostas rápidas configuradas`);

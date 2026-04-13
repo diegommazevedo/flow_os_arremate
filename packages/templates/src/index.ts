@@ -17,6 +17,8 @@ export {
   RealEstateCaixaMetaSchema,
   PIPELINE_STAGES,
   PIPELINE_MASTER_CONFIG,
+  PIPELINE_STAGE_COLORS,
+  CAIXA_PIPELINE_SLA_DAYS,
   OWNER_GROUPS,
   ROLE_PIPELINE_MAP,
   EXCEPTION_TYPE_VALUES,
@@ -44,6 +46,9 @@ export {
   MODALIDADE_VALUES,
   SUBTYPE_VALUES,
   SUBTYPE_TO_MODALIDADE,
+  BOLETO_EXPIRY_RULE,
+  evaluateBoletoExpiry,
+  FIELD_AGENT_CONFIG,
 } from "./real_estate_caixa";
 export type {
   RealEstateCaixaMeta,
@@ -67,7 +72,11 @@ export type {
   ExtendedLabels,
   ContractRiskBotConfig,
   RiskAlert,
+  BoletoExpiryRule,
 } from "./real_estate_caixa";
+
+export { DEAL_PARALLEL_TYPES, desiredParallelActivation } from "./deal_parallel_rules";
+export type { DealParallelTypeId, ParallelActivation } from "./deal_parallel_rules";
 
 export { ClinicTemplate, ClinicMetaSchema } from "./clinic";
 export type { ClinicMeta } from "./clinic";
