@@ -59,4 +59,26 @@ A partir deste pedido, em **cada** resposta materialmente relevante (feature, de
 
 ---
 
+## Atualização — auditoria pré-deploy (2026-04-14 · fusão S8/S9)
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  AUDITORIA PRÉ-DEPLOY — APROVADA ✅                             ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Dispatcher: sem conflito — camadas compostas corretamente      ║
+║    workflow  → baseline (templates, agentLimit, price padrão)   ║
+║    profile   → overlay (território, bandeirada, skip, teto)     ║
+║    effective → composição (mínimo entre limites válidos)        ║
+║  Erros TS: corrigidos — typecheck @flow-os/web exit 0           ║
+║  dossier-generator + rpa-caixa: legados resolvidos              ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+- **Commit:** `0070f08` — `fix(predeploy): TS errors + dispatcher audit + backfill script` — **push `main` OK** (`origin/main`).
+- **Railway:** confirmar **SUCCESS** do deploy deste commit no dashboard (não verificável a partir do repo).
+- **Pós-deploy (ordem):** `prisma migrate deploy` (schema `packages/db/prisma/schema.prisma`) → `seed-field-workflow.ts` → `pnpm --filter @flow-os/db run backfill:mission-profiles`.
+- **Nota:** staging intencional — **não** incluídos `evolution_api.txt`, PNGs de teste, `.playwright-mcp/`, etc.; rever `git status` para o resto untracked.
+
+---
+
 *Política: frame no chat + .md em `return/` e `C:\dev\return\` por prompt com trabalho entregue.*
