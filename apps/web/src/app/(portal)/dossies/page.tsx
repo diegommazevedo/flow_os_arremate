@@ -16,7 +16,15 @@ interface DossierRow {
   reportUrl: string | null;
   sharedWithLead: boolean;
   contactId: string | null;
+  stage: { name: string; position: number } | null;
+  recommendation: "RECOMENDAR" | "CAUTELA" | "NAO_RECOMENDAR" | null;
 }
+
+const RECOMMENDATION_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  RECOMENDAR: { bg: "#16a34a22", text: "#16a34a", label: "Recomendar" },
+  CAUTELA: { bg: "#d9770622", text: "#d97706", label: "Cautela" },
+  NAO_RECOMENDAR: { bg: "#dc262622", text: "#dc2626", label: "Nao recomendar" },
+};
 
 export default function DossiesPage() {
   const [items, setItems] = useState<DossierRow[]>([]);
@@ -101,7 +109,7 @@ export default function DossiesPage() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--border-subtle)" }}>
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1100px] text-left text-sm">
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
               <th className="p-2" style={{ color: "var(--text-tertiary)" }}>
@@ -111,10 +119,16 @@ export default function DossiesPage() {
                 Imóvel
               </th>
               <th className="p-2" style={{ color: "var(--text-tertiary)" }}>
+                Stage
+              </th>
+              <th className="p-2" style={{ color: "var(--text-tertiary)" }}>
                 Cidade/UF
               </th>
               <th className="p-2" style={{ color: "var(--text-tertiary)" }}>
                 Score
+              </th>
+              <th className="p-2" style={{ color: "var(--text-tertiary)" }}>
+                Recomendação
               </th>
               <th className="p-2" style={{ color: "var(--text-tertiary)" }}>
                 Status
@@ -130,64 +144,96 @@ export default function DossiesPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="p-4 text-center" style={{ color: "var(--text-tertiary)" }}>
+                <td colSpan={9} className="p-4 text-center" style={{ color: "var(--text-tertiary)" }}>
                   Carregando…
                 </td>
               </tr>
             ) : (
-              items.map((it) => (
-                <tr key={it.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td className="p-2">
-                    {it.contactId ? (
-                      <Link href={`/leads/${it.contactId}`} style={{ color: "var(--text-accent)" }}>
-                        {it.leadName}
-                      </Link>
-                    ) : (
-                      it.leadName
-                    )}
-                  </td>
-                  <td className="max-w-[200px] truncate p-2" title={it.imovel}>
-                    {it.imovel}
-                  </td>
-                  <td className="p-2 text-xs">
-                    {it.cidade} / {it.uf}
-                  </td>
-                  <td className="p-2">
-                    {it.score != null ? (
-                      <span>
-                        {it.score.toFixed(1)}/10
-                        {it.score >= 7 && <span className="text-amber-500"> ⚠</span>}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="p-2 text-xs">{it.status}</td>
-                  <td className="p-2">{it.reportUrl ? "✅" : "—"}</td>
-                  <td className="p-2 space-x-2 text-xs">
-                    {it.reportUrl && (
-                      <a
-                        href={it.reportUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: "var(--text-accent)" }}
-                      >
-                        Ver
-                      </a>
-                    )}
-                    {it.status === "GENERATED" && (
-                      <button
-                        type="button"
-                        className="underline"
-                        style={{ color: "var(--text-accent)" }}
-                        onClick={() => void sendWa(it.id)}
-                      >
-                        Enviar WA
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
+              items.map((it) => {
+                const rec = it.recommendation ? RECOMMENDATION_STYLES[it.recommendation] : null;
+                return (
+                  <tr key={it.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                    <td className="p-2">
+                      {it.contactId ? (
+                        <Link href={`/leads/${it.contactId}`} style={{ color: "var(--text-accent)" }}>
+                          {it.leadName}
+                        </Link>
+                      ) : (
+                        it.leadName
+                      )}
+                    </td>
+                    <td className="max-w-[200px] truncate p-2" title={it.imovel}>
+                      {it.imovel}
+                    </td>
+                    <td className="p-2">
+                      {it.stage ? (
+                        <span
+                          className="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
+                          style={{ background: "var(--surface-overlay)", color: "var(--text-primary)" }}
+                        >
+                          S{it.stage.position} {it.stage.name}
+                        </span>
+                      ) : (
+                        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>—</span>
+                      )}
+                    </td>
+                    <td className="p-2 text-xs">
+                      {it.cidade} / {it.uf}
+                    </td>
+                    <td className="p-2">
+                      {it.score != null ? (
+                        <span>
+                          {it.score.toFixed(1)}/10
+                          {it.score >= 7 && <span className="text-amber-500"> ⚠</span>}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="p-2">
+                      {rec ? (
+                        <span
+                          className="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
+                          style={{ background: rec.bg, color: rec.text }}
+                        >
+                          {rec.label}
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
+                          style={{ background: "var(--surface-overlay)", color: "var(--text-tertiary)" }}
+                        >
+                          —
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2 text-xs">{it.status}</td>
+                    <td className="p-2">{it.reportUrl ? "✅" : "—"}</td>
+                    <td className="p-2 space-x-2 text-xs">
+                      {it.reportUrl && (
+                        <a
+                          href={it.reportUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "var(--text-accent)" }}
+                        >
+                          Ver
+                        </a>
+                      )}
+                      {it.status === "GENERATED" && (
+                        <button
+                          type="button"
+                          className="underline"
+                          style={{ color: "var(--text-accent)" }}
+                          onClick={() => void sendWa(it.id)}
+                        >
+                          Enviar WA
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

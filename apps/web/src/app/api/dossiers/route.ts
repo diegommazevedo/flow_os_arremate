@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
           id: true,
           meta: true,
           contact: { select: { id: true, name: true, phone: true } },
+          stage: { select: { name: true, position: true } },
         },
       },
     },
@@ -50,6 +51,16 @@ export async function GET(req: NextRequest) {
     const cidade = String(meta["imovelCidade"] ?? meta["cidade"] ?? "—");
     const u = String(meta["imovelUF"] ?? meta["uf"] ?? "—").toUpperCase();
     const end = String(meta["imovelEndereco"] ?? meta["endereco"] ?? "—").slice(0, 56);
+
+    // Derive recommendation from fieldScore
+    let recommendation: "RECOMENDAR" | "CAUTELA" | "NAO_RECOMENDAR" | null = null;
+    if (d.fieldScore != null) {
+      const score = Number(d.fieldScore);
+      if (score <= 3) recommendation = "RECOMENDAR";
+      else if (score <= 6) recommendation = "CAUTELA";
+      else recommendation = "NAO_RECOMENDAR";
+    }
+
     return {
       id: d.id,
       dealId: d.dealId,
@@ -63,6 +74,10 @@ export async function GET(req: NextRequest) {
       reportUrl: d.reportUrl,
       sharedWithLead: d.sharedWithLead,
       contactId: d.deal.contact?.id ?? null,
+      stage: d.deal.stage
+        ? { name: d.deal.stage.name, position: d.deal.stage.position }
+        : null,
+      recommendation,
     };
   });
 
