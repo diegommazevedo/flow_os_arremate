@@ -13,6 +13,8 @@
     "./providers/whatsapp-meta": "./src/providers/whatsapp-meta.ts",
     "./providers/email-sender": "./src/providers/email-sender.ts",
     "./workers/email-sync": "./src/workers/email-sync.ts",
+    "./workers/campaign-dispatcher": "./src/workers/campaign-dispatcher.ts",
+    "./workers/field-agent-dispatcher": "./src/workers/field-agent-dispatcher.ts",
     "./token-router": "./src/token-router.ts"
   },
   "scripts": {
