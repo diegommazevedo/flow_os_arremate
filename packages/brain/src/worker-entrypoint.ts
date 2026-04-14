@@ -11,6 +11,8 @@ import { createPaymentWorker }  from "./agents/bole\u0074o-recovery";
 import { createRelatorioWorker } from "./agents/relatorio-imov\u0065l";
 import { scheduleIssuerPortalCron }  from "./workers/rpa-ca\u0069xa";
 import { syncEmailAccount }      from "./workers/email-sync";
+import { createFieldAgentFollowupWorker } from "./workers/field-agent-followup";
+import { createCampaignDispatchWorker } from "./workers/campaign-dispatcher";
 import { db }                    from "@flow-os/db";
 
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
@@ -32,6 +34,13 @@ async function main() {
     },
   );
   console.log("   ✓ DealItemReportWorker ativo");
+
+  // ── Field Agent Follow-up worker ──────────────────────────────────────
+  const followupWorker = createFieldAgentFollowupWorker({ url: REDIS_URL });
+  console.log("   ✓ FieldAgentFollowupWorker ativo");
+
+  const campaignWorker = createCampaignDispatchWorker({ url: REDIS_URL });
+  console.log("   ✓ CampaignDispatchWorker ativo");
 
   // ── Issuer portal RPA cron ────────────────────────────────────────────
   const workspaceId = process.env["DEFAULT_WORKSPACE_ID"];
@@ -76,6 +85,8 @@ async function main() {
     await Promise.allSettled([
       paymentWorker.close(),
       relatorioWorker.close(),
+      followupWorker.close(),
+      campaignWorker.close(),
     ]);
     await db.$disconnect();
     process.exit(0);

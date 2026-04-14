@@ -28,6 +28,9 @@
       "@flow-os/brain/*": [
         "../../packages/brain/src/*"
       ],
+      "@flow-os/brain/workers/campaign-dispatcher": [
+        "../../packages/brain/src/workers/campaign-dispatcher.ts"
+      ],
       "@flow-os/templates": [
         "../../packages/templates/src/index.ts"
       ],

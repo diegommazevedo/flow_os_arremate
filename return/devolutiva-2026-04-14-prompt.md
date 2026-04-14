@@ -39,21 +39,23 @@
 
 A partir deste pedido, em **cada** resposta materialmente relevante (feature, deploy, diagnóstico, sprint):
 
-1. Incluir no **chat** um bloco **FRAME** (ASCII) com resumo acionável.  
-2. Gravar **`return/devolutiva-AAAA-MM-DD-*.md`** (nome curto por sessão/tema).  
-3. Espelhar em **`C:\dev\return\`** o mesmo ficheiro para handoff fora do git.
+1. Incluir no **chat** um bloco **FRAME** (ASCII) com resumo acionável.
+2. Gravar `**return/devolutiva-AAAA-MM-DD-*.md`** (nome curto por sessão/tema).
+3. Espelhar em `**C:\dev\return\`** o mesmo ficheiro para handoff fora do git.
 
 ### Ficheiros desta devolutiva
 
-| Local | Caminho |
-|-------|---------|
-| Repositório | `return/devolutiva-2026-04-14-prompt.md` |
-| Handoff | `C:\dev\return\devolutiva-2026-04-14-prompt.md` |
+
+| Local       | Caminho                                         |
+| ----------- | ----------------------------------------------- |
+| Repositório | `return/devolutiva-2026-04-14-prompt.md`        |
+| Handoff     | `C:\dev\return\devolutiva-2026-04-14-prompt.md` |
+
 
 ### Referência técnica rápida
 
-- Commit cockpit no git: **`bbd1430`** (`feat(web): páginas cockpit no grupo (portal) + APIs...`).
-- `LeadsTable` + `GET /api/leads` já estavam em **`d47ee90`**; faltavam as `page.tsx` e restantes rotas/APIs até ao **`bbd1430`**.
+- Commit cockpit no git: `**bbd1430**` (`feat(web): páginas cockpit no grupo (portal) + APIs...`).
+- `LeadsTable` + `GET /api/leads` já estavam em `**d47ee90**`; faltavam as `page.tsx` e restantes rotas/APIs até ao `**bbd1430**`.
 
 ---
 

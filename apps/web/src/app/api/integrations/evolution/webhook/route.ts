@@ -46,7 +46,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     config["apiUrl"] ?? process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080",
   );
   const apiKey   = config["apiKey"] ? decrypt(config["apiKey"]) : (process.env["EVOLUTION_API_KEY"] ?? "");
-  const instance = config["instanceName"] ?? "";
+  const instance = config["EVOLUTION_INSTANCE_NAME"] ?? config["instanceName"] ?? "";
 
   if (!instance) {
     return NextResponse.json({ error: "instanceName não configurado na integração" }, { status: 400 });
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: JSON.stringify({
         url:                webhookUrl,
         webhook_by_events:  false,
-        webhook_base64:     false,
+        webhook_base64:     true,
         events: [
           "MESSAGES_UPSERT",
           "CONNECTION_UPDATE",
@@ -90,20 +90,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
 
     // AuditLog [SEC-06]
-    await db.agentAuditLog.create({
-      data: {
-        workspaceId,
-        agentId:    "integrations_ui",
-        action:     "evolution_webhook_configured",
-        input:      { integrationId: integration.id, instance, webhookUrl },
-        output:     { ok: true },
-        modelUsed:  "none",
-        tokensUsed: 0,
-        costUsd:    0,
-        durationMs: 0,
-        success:    true,
-      },
+    const auditAgent = await db.agent.findFirst({
+      where: { workspaceId },
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
     });
+    if (auditAgent) {
+      await db.agentAuditLog.create({
+        data: {
+          workspaceId,
+          agentId:    auditAgent.id,
+          action:     "evolution_webhook_configured",
+          input:      { integrationId: integration.id, instance, webhookUrl },
+          output:     { ok: true },
+          modelUsed:  "none",
+          tokensUsed: 0,
+          costUsd:    0,
+          durationMs: 0,
+          success:    true,
+        },
+      });
+    }
 
     return NextResponse.json({ ok: true, webhookUrl });
   } catch (e) {

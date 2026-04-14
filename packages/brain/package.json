@@ -15,6 +15,9 @@
     "./workers/email-sync": "./src/workers/email-sync.ts",
     "./workers/campaign-dispatcher": "./src/workers/campaign-dispatcher.ts",
     "./workers/field-agent-dispatcher": "./src/workers/field-agent-dispatcher.ts",
+    "./workers/mission-profile-default-items": "./src/workers/mission-profile-default-items.ts",
+    "./workers/mission-profile-resolver": "./src/workers/mission-profile-resolver.ts",
+    "./workers/mission-profile-advisor": "./src/workers/mission-profile-advisor.ts",
     "./token-router": "./src/token-router.ts"
   },
   "scripts": {

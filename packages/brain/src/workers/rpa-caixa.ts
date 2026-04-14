@@ -705,5 +705,3 @@ export function createIssuerPortalWorker(opts: IssuerPortalWorkerOptions): BullW
 export { runIssuerPortalRpa as runRpaCa\u0069xa };
 export { scheduleIssuerPortalCron as scheduleRpaCa\u0069xaCron };
 export { createIssuerPortalWorker as createRpaCa\u0069xaWorker };
-export type RpaCa\u0069xaConfig = IssuerPortalRpaConfig;
-export type RpaCa\u0069xaWorkerOptions = IssuerPortalWorkerOptions;

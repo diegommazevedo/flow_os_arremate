@@ -122,6 +122,10 @@ async function processFollowup(data: FollowupJobData): Promise<void> {
   // Se já respondeu (ACCEPTED, IN_PROGRESS, COMPLETED, REJECTED), nada a fazer
   if (assignment.status !== "CONTACTED") return;
 
+  // Verificar config do workflow para autoRetry
+  const { resolveWorkflow } = await import("./field-workflow-resolver");
+  const workflow = await resolveWorkflow(workspaceId);
+
   // Marcar como NO_RESPONSE
   await db.fieldAssignment.update({
     where: { id: assignmentId, workspaceId },
@@ -148,8 +152,8 @@ async function processFollowup(data: FollowupJobData): Promise<void> {
     },
   });
 
-  // Se nenhum ativo, tentar próximo agente disponível
-  if (activeCount === 0) {
+  // Se nenhum ativo e autoRetry habilitado, tentar próximo agente disponível
+  if (activeCount === 0 && workflow.config.autoRetry) {
     await dispatchNextAgent(dealId, workspaceId);
   }
 }
@@ -210,13 +214,18 @@ async function dispatchNextAgent(
     return;
   }
 
-  // Despachar via lazy import (evita circular dep)
-  const { dispatchFieldAgents } = await import("./field-agent-dispatcher");
-
-  // dispatchFieldAgents já faz selectAgents novamente, mas agora os já tentados
-  // têm assignments existentes. Precisamos criar o assignment diretamente para 1 agente.
+  // Despachar via lazy imports
   const { evolutionApi } = await import("../providers/evolution-api");
-  const { defaultSanitizer } = await import("@flow-os/core");
+  const { resolveWorkflow } = await import("./field-workflow-resolver");
+  const { buildMessageFromTemplate } = await import("./field-agent-defaults");
+
+  // Resolver workflow para template
+  const workflow = await resolveWorkflow(workspaceId);
+  const { resolveMissionProfileForDeal, priceAgreedFromProfile, effectiveFollowupMs } = await import(
+    "./mission-profile-resolver"
+  );
+  const missionProfile = await resolveMissionProfileForDeal(workspaceId, meta);
+  const agreed = priceAgreedFromProfile(Number(nextAgent.pricePerVisit), missionProfile);
 
   // Resolver instância Evolution
   const integration = await db.workspaceIntegration.findFirst({
@@ -227,25 +236,22 @@ async function dispatchNextAgent(
   const instance = cfg["EVOLUTION_INSTANCE_NAME"];
   if (!instance) return;
 
-  // Criar assignment + enviar Msg 1
+  // Criar assignment + enviar Msg 1 (via template do workflow)
   const assignment = await db.fieldAssignment.create({
     data: {
       workspaceId,
       dealId,
       agentId: nextAgent.id,
+      profileId: missionProfile?.id ?? null,
       status: "PENDING_CONTACT",
-      priceAgreed: nextAgent.pricePerVisit,
+      priceAgreed: agreed,
     },
   });
 
-  const safeName = defaultSanitizer.clean(nextAgent.partner.name);
-  const msg = [
-    `Olá ${safeName}! Tudo bem?`,
-    "",
-    "Sou da equipe do Arrematador Caixa. Temos um serviço rápido de vistoria disponível perto de você.",
-    "",
-    "Interessado em saber mais?",
-  ].join("\n");
+  const msg = buildMessageFromTemplate(
+    workflow.templates["initial_contact"] ?? "",
+    { nome: nextAgent.partner.name },
+  );
 
   try {
     await evolutionApi.sendText(instance, nextAgent.partner.phone, msg, workspaceId);
@@ -266,11 +272,12 @@ async function dispatchNextAgent(
       status: "CONTACTED",
     });
 
-    // Agendar novo follow-up para este agente
+    // Agendar novo follow-up para este agente (delay do workflow)
     const redisUrl = process.env["REDIS_URL"] ?? "redis://localhost:6379";
     await scheduleFollowup(
       { assignmentId: assignment.id, workspaceId, dealId },
       { url: redisUrl },
+      effectiveFollowupMs(workflow.config.followupDelayMs, missionProfile),
     );
   } catch (err) {
     console.error("[field-agent-followup] Erro ao contactar próximo agente:", err);

@@ -68,6 +68,8 @@ model Workspace {
   campaigns           Campaign[]
   campaignItems       CampaignItem[]
   dealParallels       DealParallel[]
+  fieldWorkflows      FieldWorkflow[]
+  missionProfiles     MissionProfile[]
 
   @@map("workspaces")
 }
@@ -905,6 +907,52 @@ enum PartnerType {
   EXTERNO
 }
 
+enum ProfileLevel {
+  DOWN
+  STANDARD
+  UP
+}
+
+/// Perfil de missão de campo — valores, itens (P-02 em JSON) e regras de skip.
+model MissionProfile {
+  id          String       @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  isDefault   Boolean      @default(false)
+  isActive    Boolean      @default(true)
+  level       ProfileLevel @default(STANDARD)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  bandeiradaValue Int    @default(4000)
+  maxValue        Int    @default(8000)
+  currency        String @default("BRL")
+
+  /// MissionItemConfig[] — P-02
+  items Json @default("[]")
+
+  skipPenalty      Boolean  @default(true)
+  skipRequiresText Boolean  @default(true)
+  skipMinChars     Int      @default(10)
+  skipMaxItems     Int      @default(3)
+  skipReasons      String[] @default([])
+
+  agentLimit      Int @default(3)
+  followupDelayMs Int @default(7200000)
+  deadlineHours   Int @default(48)
+
+  /// { ufs?: string[]; cities?: string[]; keywords?: string[]; priority?: number }
+  autoSelectRules Json @default("{}")
+
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignments  FieldAssignment[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("mission_profiles")
+}
+
 model FieldAgentProfile {
   id            String            @id @default(cuid())
   workspaceId   String
@@ -940,6 +988,7 @@ model FieldAssignment {
   workspaceId   String
   dealId        String
   agentId       String
+  profileId     String?
   status        AssignmentStatus @default(PENDING_CONTACT)
   contactedAt   DateTime?
   acceptedAt    DateTime?
@@ -949,17 +998,21 @@ model FieldAssignment {
   priceAgreed   Decimal?         @db.Decimal(10, 2)
   waMessageId   String?
   evidenceCount Int              @default(0)
+  /// Token opaco para PWA público (GET /api/vistoria/[token]) — SEC-08 sem expor id interno.
+  pwaAccessToken String          @unique @default(cuid())
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  workspace  Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   deal       Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
   agent      FieldAgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  profile    MissionProfile?   @relation(fields: [profileId], references: [id], onDelete: SetNull)
   evidences  FieldEvidence[]
 
   @@index([workspaceId])
   @@index([dealId])
   @@index([agentId])
+  @@index([profileId])
   @@map("field_assignments")
 }
 
@@ -1174,4 +1227,108 @@ enum CampaignItemStatus {
   DONE
   ERROR
   SKIPPED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 11 — FIELD WORKFLOW EDITOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum FieldStepType {
+  SEND_MESSAGE
+  WAIT_RESPONSE
+  WAIT_DELAY
+  CONDITION
+  UPDATE_STATUS
+  SCHEDULE_FOLLOWUP
+  DISPATCH_NEXT
+}
+
+model FieldWorkflow {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  steps     FieldWorkflowStep[]
+  edges     FieldWorkflowEdge[]
+  config    FieldWorkflowConfig?
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("field_workflows")
+}
+
+model FieldWorkflowStep {
+  id         String        @id @default(cuid())
+  workflowId String
+  key        String
+  label      String
+  type       FieldStepType
+  position   Int
+  positionX  Float         @default(0)
+  positionY  Float         @default(0)
+  config     Json          @default("{}")
+  createdAt  DateTime      @default(now())
+
+  workflow  FieldWorkflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  template  FieldMessageTemplate?
+  edgesFrom FieldWorkflowEdge[]  @relation("edgeSource")
+  edgesTo   FieldWorkflowEdge[]  @relation("edgeTarget")
+
+  @@unique([workflowId, key])
+  @@unique([workflowId, position])
+  @@map("field_workflow_steps")
+}
+
+model FieldWorkflowEdge {
+  id         String  @id @default(cuid())
+  workflowId String
+  sourceId   String
+  targetId   String
+  label      String?
+  condition  Json?
+
+  workflow FieldWorkflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  source   FieldWorkflowStep @relation("edgeSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target   FieldWorkflowStep @relation("edgeTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, sourceId, targetId])
+  @@map("field_workflow_edges")
+}
+
+model FieldMessageTemplate {
+  id        String   @id @default(cuid())
+  stepId    String   @unique
+  name      String
+  body      String   @db.Text
+  variables String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  step FieldWorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@map("field_message_templates")
+}
+
+model FieldWorkflowConfig {
+  id              String  @id @default(cuid())
+  workflowId      String  @unique
+  agentLimit      Int     @default(3)
+  followupDelayMs Int     @default(7200000)
+  deadlineHours   Int     @default(48)
+  priceDefault    Decimal @default(80) @db.Decimal(10, 2)
+  currency        String  @default("BRL")
+  evidenceTypes   Json    @default("[\"PHOTO_EXTERIOR\",\"PHOTO_SURROUNDINGS\",\"PHOTO_ACCESS\",\"VIDEO_EXTERIOR\",\"AUDIO_DESCRIPTION\"]")
+  evidenceMinimum Int     @default(6)
+  autoRetry       Boolean @default(true)
+
+  workflow FieldWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@map("field_workflow_configs")
 }

@@ -14,6 +14,7 @@
     "seed": "tsx --tsconfig tsconfig.json prisma/seed.ts",
     "seed:arremate": "tsx seeds/arremate-config.ts",
     "migrate:pipedrive": "tsx --tsconfig tsconfig.json scripts/migrate-pipedrive.ts",
+    "backfill:mission-profiles": "tsx --tsconfig tsconfig.json scripts/backfill-mission-profiles.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

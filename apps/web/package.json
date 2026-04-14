@@ -24,6 +24,7 @@
     "@flow-os/templates": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.46.2",
+    "@xyflow/react": "^12.10.2",
     "bullmq": "^5.71.1",
     "clsx": "^2.1.1",
     "jose": "^6.2.2",

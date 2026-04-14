@@ -377,7 +377,7 @@ async function resolveOrCreateContact(
   if (existing) {
     // Atualiza nome se mudou (pushName pode variar no WhatsApp)
     if (safeName && safeName !== existing.name && safeName !== "WhatsApp") {
-      await db.contact.update({ where: { id: existing.id }, data: { name: safeName } }).catch(() => {});
+      await db.contact.update({ where: { id: existing.id, workspaceId }, data: { name: safeName } }).catch(() => {});
     }
     return existing.id;
   }
@@ -481,7 +481,7 @@ async function upsertTask(params: {
     if (byDeal) {
       // Atualiza última mensagem na task existente
       await db.task.update({
-        where: { id: byDeal.id },
+        where: { id: byDeal.id, workspaceId: params.workspaceId },
         data: {
           updatedAt: new Date(),
           description: JSON.stringify({
@@ -573,6 +573,157 @@ function evolutionParticipantDisplayName(cleanedPushName: string, phoneKey: stri
     return d.length >= 4 ? `Cliente ·${d.slice(-4)}` : "WhatsApp";
   }
   return n;
+}
+
+// ── Field Agent Evidence Capture ──────────────────────────────────────────
+
+const ACCEPT_KEYWORDS = ["sim", "ok", "pode", "topo", "claro", "vou", "consigo", "aceito", "bora", "pode ser"];
+const REJECT_KEYWORDS = ["não", "agora não", "ocupado", "nao posso", "nao consigo", "cancelar"];
+
+const MIN_EVIDENCE_COUNT = 5; // 3 fotos + 1 video + 1 audio mínimo
+
+function classifyFieldAgentText(text: string): "accept" | "reject" | "neutral" {
+  const normalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (ACCEPT_KEYWORDS.some((k) => normalized.includes(k))) return "accept";
+  if (REJECT_KEYWORDS.some((k) => normalized.includes(k))) return "reject";
+  return "neutral";
+}
+
+function mimeToEvidenceType(mimeType: string, kind: string): string {
+  if (kind === "AUDIO") return "AUDIO_DESCRIPTION";
+  if (kind === "VIDEO") {
+    return mimeType.includes("video") ? "VIDEO_EXTERIOR" : "VIDEO_SURROUNDINGS";
+  }
+  // Default to PHOTO_EXTERIOR for images
+  return "PHOTO_EXTERIOR";
+}
+
+async function tryProcessFieldAgentMessage(params: {
+  workspaceId: string;
+  senderPhone: string;
+  cleanText: string;
+  storedMedia: { kind: EvolutionMediaKind; url: string; fileName?: string; mimeType: string; caption: string } | null;
+  messageId: string;
+}): Promise<Record<string, unknown> | null> {
+  const { workspaceId, senderPhone, cleanText, storedMedia, messageId } = params;
+
+  // Normalizar telefone para busca
+  const phoneDigits = senderPhone.replace(/\D/g, "");
+
+  // Verificar se remetente é motoboy com assignment ativo [SEC-03]
+  const activeAssignment = await db.fieldAssignment.findFirst({
+    where: {
+      workspaceId,
+      status: { in: ["CONTACTED", "ACCEPTED", "IN_PROGRESS"] },
+      agent: { partner: { phone: { in: [phoneDigits, senderPhone] } } },
+    },
+    include: {
+      agent: { include: { partner: { select: { id: true, name: true, phone: true } } } },
+      deal: { select: { id: true, meta: true } },
+    },
+  });
+
+  if (!activeAssignment) return null;
+
+  // É um field agent ativo — processar diferente
+  const assignmentId = activeAssignment.id;
+
+  // SE mensagem de texto: verificar aceite ou rejeição
+  if (!storedMedia && cleanText.trim()) {
+    const classification = classifyFieldAgentText(cleanText);
+
+    if (classification === "accept") {
+      if (activeAssignment.status === "CONTACTED") {
+        // Aceite inicial → enviar detalhes (Msg 2)
+        // Lazy import to avoid circular dep with brain
+        const { sendAcceptanceDetails } = await import("@flow-os/brain/workers/field-agent-dispatcher");
+        await sendAcceptanceDetails(assignmentId, workspaceId);
+        return { assignmentId, action: "accepted_sending_details", status: "ACCEPTED" };
+      }
+      if (activeAssignment.status === "ACCEPTED") {
+        // Segundo aceite → confirmar e iniciar (Msg 3)
+        const { sendConfirmation } = await import("@flow-os/brain/workers/field-agent-dispatcher");
+        await sendConfirmation(assignmentId, workspaceId);
+        return { assignmentId, action: "confirmed_in_progress", status: "IN_PROGRESS" };
+      }
+    }
+
+    if (classification === "reject") {
+      await db.fieldAssignment.update({
+        where: { id: assignmentId, workspaceId },
+        data: {
+          status: "REJECTED",
+          rejectedAt: new Date(),
+          rejectionNote: cleanText.slice(0, 500),
+        },
+      });
+      return { assignmentId, action: "rejected", status: "REJECTED" };
+    }
+
+    // Neutral text — ignore (don't block normal flow)
+    return { assignmentId, action: "neutral_text", status: activeAssignment.status };
+  }
+
+  // SE mídia (foto/vídeo/áudio): salvar como FieldEvidence
+  if (storedMedia) {
+    const evidenceType = mimeToEvidenceType(storedMedia.mimeType, storedMedia.kind);
+
+    await db.fieldEvidence.create({
+      data: {
+        workspaceId,
+        assignmentId,
+        dealId: activeAssignment.dealId,
+        type: evidenceType as "PHOTO_EXTERIOR",
+        mediaUrl: storedMedia.url,
+        mediaKey: `${workspaceId}/chat-media/${messageId}.${storedMedia.mimeType.split("/")[1] ?? "bin"}`,
+        mimeType: storedMedia.mimeType,
+        description: storedMedia.caption || null,
+      },
+    });
+
+    // Incrementar evidenceCount
+    const updateData: Record<string, unknown> = { evidenceCount: { increment: 1 } };
+    if (activeAssignment.status === "ACCEPTED") {
+      updateData["status"] = "IN_PROGRESS";
+    }
+    const updated = await db.fieldAssignment.update({
+      where: { id: assignmentId, workspaceId },
+      data: updateData as Parameters<typeof db.fieldAssignment.update>[0]["data"],
+      select: { evidenceCount: true },
+    });
+
+    // Verificar se atingiu o mínimo
+    if (updated.evidenceCount >= MIN_EVIDENCE_COUNT) {
+      await db.fieldAssignment.update({
+        where: { id: assignmentId, workspaceId },
+        data: { status: "COMPLETED", completedAt: new Date() },
+      });
+
+      // Verificar se todos assignments do Deal têm ao menos 1 COMPLETED
+      const allAssignments = await db.fieldAssignment.findMany({
+        where: { workspaceId, dealId: activeAssignment.dealId },
+        select: { status: true },
+      });
+
+      const hasCompleted = allAssignments.some((a) => a.status === "COMPLETED");
+      if (hasCompleted) {
+        await db.propertyDossier.updateMany({
+          where: { workspaceId, dealId: activeAssignment.dealId },
+          data: { status: "FIELD_COMPLETE" },
+        });
+      }
+    }
+
+    return {
+      assignmentId,
+      action: "evidence_stored",
+      evidenceType,
+      evidenceCount: updated.evidenceCount,
+      completed: updated.evidenceCount >= MIN_EVIDENCE_COUNT,
+    };
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -828,6 +979,35 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true });
+  }
+
+  // ── PARTE 4: Captura automática de evidências de field agents ────────────
+  if (!isFromMe) {
+    const fieldAgentResult = await tryProcessFieldAgentMessage({
+      workspaceId,
+      senderPhone: from,
+      cleanText,
+      storedMedia,
+      messageId,
+    });
+    if (fieldAgentResult) {
+      after(() => {
+        void appendAuditLog({
+          workspaceId,
+          action: "webhook_evolution_field_agent",
+          input: {
+            messageId,
+            instance,
+            from,
+            fromMe: isFromMe,
+            rawText: cleanText.slice(0, 300),
+          },
+          output: fieldAgentResult as Record<string, string | number | boolean>,
+          durationMs: Date.now() - startedAt,
+        }).catch(() => undefined);
+      });
+      return NextResponse.json({ ok: true, fieldAgent: true });
+    }
   }
 
   let safeName = evolutionParticipantDisplayName(rawPush, from);

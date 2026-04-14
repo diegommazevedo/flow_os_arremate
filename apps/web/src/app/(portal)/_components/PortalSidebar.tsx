@@ -96,6 +96,8 @@ type NavHref =
   | "/leads"
   | "/campanhas"
   | "/motoboys"
+  | "/motoboys/perfis"
+  | "/motoboys/workflow"
   | "/dossies"
   | "/analytics"
   | "/settings"
@@ -120,6 +122,8 @@ const NAV_ENTRIES: NavEntry[] = [
   { kind: "item", href: "/leads", label: "Leads", icon: <IconLeads /> },
   { kind: "item", href: "/campanhas", label: "Campanhas", icon: <IconCampaigns /> },
   { kind: "item", href: "/motoboys", label: "Motoboys", icon: <IconMotoboys /> },
+  { kind: "item", href: "/motoboys/perfis", label: "Perfis de missão", icon: <LetterIcon letter="P" /> },
+  { kind: "item", href: "/motoboys/workflow", label: "Workflow", icon: <LetterIcon letter="W" /> },
   { kind: "item", href: "/dossies", label: "Dossiês", icon: <IconDossies /> },
   { kind: "item", href: "/analytics", label: "Analytics", icon: <LetterIcon letter="Y" /> },
   { kind: "item", href: "/settings", label: "Configurações", icon: <LetterIcon letter="S" /> },

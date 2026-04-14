@@ -63,9 +63,18 @@ export async function getSessionContext(): Promise<SessionContext | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return null;
 
-  return resolveMemberSession(user.id);
+  if (user) {
+    const session = await resolveMemberSession(user.id);
+    if (session) return session;
+  }
+
+  // Dev fallback: DB down or user not in members table
+  if (process.env["NODE_ENV"] === "development" && devWorkspace) {
+    return { workspaceId: devWorkspace, userId: user?.id ?? null, role: "DEV" };
+  }
+
+  return null;
 }
 
 export async function getSessionContextFromBearer(

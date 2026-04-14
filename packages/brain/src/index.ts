@@ -165,6 +165,54 @@ export { EvolutionApiProvider, evolutionApi } from "./providers/evolution-api";
 
 export { generateProtocol } from "./lib/protocol-generator";
 
+// ── Field Agent / Motoboy Pipeline ─────────────────────────────────────────
+
+import type { DispatchResult } from "./workers/field-agent-dispatcher";
+
+export type { DispatchResult };
+
+export async function dispatchFieldAgents(
+  dealId: string,
+  workspaceId: string,
+): Promise<DispatchResult> {
+  const m = await import("./workers/field-agent-dispatcher");
+  return m.dispatchFieldAgents(dealId, workspaceId);
+}
+
+export async function generateDossier(
+  dossierId: string,
+  workspaceId: string,
+) {
+  const m = await import("./workers/dossier-generator");
+  return m.generateDossier(dossierId, workspaceId);
+}
+
+export {
+  selectAgents,
+  sendAcceptanceDetails,
+  sendConfirmation,
+} from "./workers/field-agent-dispatcher";
+
+export { generateDossier as generatePropertyDossier } from "./workers/dossier-generator";
+
+export {
+  scheduleFollowup as scheduleFieldAgentFollowup,
+  cancelFollowup as cancelFieldAgentFollowup,
+  createFieldAgentFollowupWorker,
+  FIELD_AGENT_FOLLOWUP_QUEUE,
+} from "./workers/field-agent-followup";
+
+export { resolveWorkflow, clearWorkflowCache } from "./workers/field-workflow-resolver";
+export type { ResolvedWorkflow, ResolvedWorkflowConfig } from "./workers/field-workflow-resolver";
+export { buildMessageFromTemplate, DEFAULT_WORKFLOW_CONFIG } from "./workers/field-agent-defaults";
+
+export {
+  CAMPAIGN_DISPATCH_QUEUE,
+  createCampaignDispatchWorker,
+  enqueueCampaignDispatchJobs,
+  computeJobDelays,
+} from "./workers/campaign-dispatcher";
+
 export type {
   ProviderName,
   RouterDecision,
