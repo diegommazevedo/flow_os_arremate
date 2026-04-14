@@ -23,6 +23,7 @@ import {
   priceAgreedFromProfile,
   resolveMissionProfileForDeal,
 } from "./mission-profile-resolver";
+import { ensureDossierChecklist } from "../lib/dossier-checklist-defaults";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -254,6 +255,14 @@ export async function dispatchFieldAgents(
     },
   });
 
+  const dossierRow = await db.propertyDossier.findUnique({
+    where: { dealId },
+    select: { id: true },
+  });
+  if (dossierRow) {
+    await ensureDossierChecklist(workspaceId, dossierRow.id);
+  }
+
   // 6. Para cada agente: criar assignment + enviar Msg 1 (via template)
   for (const agent of agents) {
     if (!agent.partner.phone) {
@@ -359,7 +368,13 @@ export async function sendAcceptanceDetails(
     workflow.templates["send_details"] ?? "",
     { endereco, valor: preco, prazo: prazoH },
   );
-  await evolutionApi.sendText(instance, assignment.agent.partner.phone, msg, workspaceId);
+
+  // Adicionar link PWA de vistoria
+  const { buildVistoriaUrl } = await import("../lib/vistoria-token");
+  const vistoriaUrl = buildVistoriaUrl(assignment.pwaAccessToken);
+  const msgComLink = `${msg}\n\n📋 Formulário de vistoria:\n${vistoriaUrl}`;
+
+  await evolutionApi.sendText(instance, assignment.agent.partner.phone, msgComLink, workspaceId);
 
   await db.fieldAssignment.update({
     where: { id: assignmentId, workspaceId },

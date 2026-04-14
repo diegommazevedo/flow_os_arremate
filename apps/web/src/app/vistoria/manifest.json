@@ -1,0 +1,9 @@
+{
+  "name": "FlowOS Vistoria",
+  "short_name": "Vistoria",
+  "start_url": "/vistoria",
+  "display": "standalone",
+  "background_color": "#0d0e11",
+  "theme_color": "#5b7fff",
+  "icons": []
+}

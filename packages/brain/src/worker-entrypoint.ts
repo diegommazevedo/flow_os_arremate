@@ -13,6 +13,10 @@ import { scheduleIssuerPortalCron }  from "./workers/rpa-ca\u0069xa";
 import { syncEmailAccount }      from "./workers/email-sync";
 import { createFieldAgentFollowupWorker } from "./workers/field-agent-followup";
 import { createCampaignDispatchWorker } from "./workers/campaign-dispatcher";
+import { createDossierDocProcessor } from "./workers/dossier-doc-processor";
+import { createDossierConsolidator } from "./workers/dossier-consolidator";
+import { createEditalProcessor } from "./workers/edital-processor";
+import { createEditalHunterWorker } from "./workers/edital-hunter";
 import { db }                    from "@flow-os/db";
 
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
@@ -41,6 +45,18 @@ async function main() {
 
   const campaignWorker = createCampaignDispatchWorker({ url: REDIS_URL });
   console.log("   ✓ CampaignDispatchWorker ativo");
+
+  const dossierDocWorker = createDossierDocProcessor({ url: REDIS_URL });
+  console.log("   ✓ DossierDocProcessor ativo");
+
+  const dossierConsolidatorWorker = createDossierConsolidator({ url: REDIS_URL });
+  console.log("   ✓ DossierConsolidator ativo");
+
+  const editalProcessorWorker = createEditalProcessor({ url: REDIS_URL });
+  console.log("   ✓ EditalProcessor ativo");
+
+  const editalHunterWorker = createEditalHunterWorker({ url: REDIS_URL });
+  console.log("   ✓ EditalHunter ativo");
 
   // ── Issuer portal RPA cron ────────────────────────────────────────────
   const workspaceId = process.env["DEFAULT_WORKSPACE_ID"];
@@ -87,6 +103,8 @@ async function main() {
       relatorioWorker.close(),
       followupWorker.close(),
       campaignWorker.close(),
+      dossierDocWorker.close(),
+      dossierConsolidatorWorker.close(),
     ]);
     await db.$disconnect();
     process.exit(0);

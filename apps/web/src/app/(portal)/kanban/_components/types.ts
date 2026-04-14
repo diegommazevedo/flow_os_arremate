@@ -34,8 +34,8 @@ export interface FilterState {
 }
 
 export interface SSEMessage {
-  type: "DEAL_UPDATE" | "HEARTBEAT";
+  type: "DEAL_UPDATE" | "GATE_B_UPDATE" | "HEARTBEAT";
   dealId?: string;
-  patch?: Partial<KanbanDeal>;
+  patch?: Partial<KanbanDeal> | Record<string, unknown>;
   timestamp: number;
 }

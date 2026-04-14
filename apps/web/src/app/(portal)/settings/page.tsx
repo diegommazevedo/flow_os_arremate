@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DossierSettingsCard } from "./_components/DossierSettingsCard";
 
 export const metadata: Metadata = { title: "Configurações" };
 
@@ -98,6 +99,8 @@ export default function SettingsPage() {
           </p>
         )}
       </div>
+
+      <DossierSettingsCard />
 
       {/* Template */}
       <div className={PANEL}>

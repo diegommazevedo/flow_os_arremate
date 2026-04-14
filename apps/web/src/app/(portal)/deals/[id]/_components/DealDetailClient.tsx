@@ -16,6 +16,8 @@ import type {
   DealDetailProtocol,
 } from "../_lib/deal-queries";
 import { ProtocolModal } from "@/components/protocol-modal";
+import { DealOpsTabs, type DealPrimarySection } from "./DealOpsTabs";
+import { CountdownBanner } from "./CountdownBanner";
 
 type TabId     = "notes" | "activities" | "files" | "history" | "protocols";
 type MetaTabId = "oferta" | "imovel" | "processos" | "condominio";
@@ -405,6 +407,7 @@ function ProtocolCard({
 }
 
 export function DealDetailClient({ initialDeal }: { initialDeal: DealDetailData }) {
+  const [primarySection, setPrimarySection] = useState<DealPrimarySection>("dados");
   const [activeTab, setActiveTab]   = useState<TabId>("notes");
   const [metaTab,   setMetaTab]     = useState<MetaTabId>("oferta");
   const [title, setTitle] = useState(initialDeal.title);
@@ -619,6 +622,34 @@ export function DealDetailClient({ initialDeal }: { initialDeal: DealDetailData 
         </div>
       </header>
 
+      <CountdownBanner dealId={initialDeal.id} />
+
+      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-3">
+        {(
+          [
+            ["dados", "Dados"],
+            ["vistoria", "Vistoria"],
+            ["docs", "Documentação"],
+            ["relatorio", "Relatório"],
+            ["edital", "Edital"],
+            ["historico", "Histórico"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setPrimarySection(id)}
+            className={[
+              "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+              primarySection === id ? "bg-brand-500 text-gray-950" : "bg-gray-900 text-gray-400 hover:text-white",
+            ].join(" ")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {primarySection === "dados" ? (
       <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
         <div className="space-y-4">
           {/* ── Abas de bloco ── */}
@@ -1087,6 +1118,9 @@ export function DealDetailClient({ initialDeal }: { initialDeal: DealDetailData 
           </div>
         </aside>
       </div>
+      ) : (
+        <DealOpsTabs section={primarySection} dealId={initialDeal.id} history={history} />
+      )}
 
       <ProtocolModal
         open={protocolModalId !== null}

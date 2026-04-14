@@ -11,7 +11,7 @@
 import { EventEmitter } from "node:events";
 
 export interface KanbanSSEEvent {
-  type:       "TASK_CREATED" | "TASK_UPDATED" | "DEAL_UPDATE" | "NEW_MESSAGE" | "HEARTBEAT";
+  type:       "TASK_CREATED" | "TASK_UPDATED" | "DEAL_UPDATE" | "NEW_MESSAGE" | "GATE_B_UPDATE" | "HEARTBEAT";
   taskId?:    string;
   dealId?:    string | null;
   quadrant?:  string;

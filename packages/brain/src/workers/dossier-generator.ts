@@ -13,6 +13,7 @@
  */
 
 import { db } from "@flow-os/db";
+import { ensureDossierChecklist } from "../lib/dossier-checklist-defaults";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
@@ -460,6 +461,8 @@ export async function generateDossier(
   if (!dossier) {
     return { success: false, error: "Dossiê não encontrado" };
   }
+
+  await ensureDossierChecklist(workspaceId, dossierId);
 
   const meta = (dossier.deal.meta ?? {}) as DealMeta;
 

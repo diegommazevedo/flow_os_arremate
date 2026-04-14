@@ -70,6 +70,9 @@ model Workspace {
   dealParallels       DealParallel[]
   fieldWorkflows      FieldWorkflow[]
   missionProfiles     MissionProfile[]
+  paymentOrders       PaymentOrder[]
+  dossierChecklists   DossierChecklist[]
+  editais             Edital[]
 
   @@map("workspaces")
 }
@@ -152,6 +155,7 @@ model Deal {
   propertyDossier  PropertyDossier?
   campaignItems    CampaignItem[]
   dealParallels    DealParallel[]
+  edital           Edital?
 
   @@index([workspaceId, stageId])
   @@index([workspaceId, ownerId])
@@ -968,6 +972,10 @@ model FieldAgentProfile {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
+  cpf        String?
+  pixKey     String?
+  pixKeyType PixKeyType?
+
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   partner     Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   assignments FieldAssignment[]
@@ -1000,14 +1008,17 @@ model FieldAssignment {
   evidenceCount Int              @default(0)
   /// Token opaco para PWA público (GET /api/vistoria/[token]) — SEC-08 sem expor id interno.
   pwaAccessToken String          @unique @default(cuid())
+  /// PWA: tentativas de confirmação, itemStates, descricaoTexto, pixPendente, etc.
+  meta          Json             @default("{}")
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
   workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   deal       Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
   agent      FieldAgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  profile    MissionProfile?   @relation(fields: [profileId], references: [id], onDelete: SetNull)
-  evidences  FieldEvidence[]
+  profile      MissionProfile?   @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  evidences    FieldEvidence[]
+  paymentOrder PaymentOrder?
 
   @@index([workspaceId])
   @@index([dealId])
@@ -1076,9 +1087,10 @@ model PropertyDossier {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  deal      Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal      Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
   documents DossierDocument[]
+  checklist DossierChecklist?
 
   @@index([workspaceId])
   @@map("property_dossiers")
@@ -1227,6 +1239,127 @@ enum CampaignItemStatus {
   DONE
   ERROR
   SKIPPED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMADA 10 — PAGAMENTO, CHECKLIST, EDITAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PixKeyType {
+  CPF
+  EMAIL
+  PHONE
+  EVP
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  PAID
+  FAILED
+  CANCELLED
+}
+
+model PaymentOrder {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  assignmentId String        @unique
+  agentId      String
+  amount       Int
+  pixKey       String
+  pixKeyType   PixKeyType
+  status       PaymentStatus @default(PENDING)
+  breakdown    Json
+  approvedBy   String?
+  approvedAt   DateTime?
+  paidAt       DateTime?
+  paidRef      String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  workspace  Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignment FieldAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([status])
+  @@map("payment_orders")
+}
+
+model DossierChecklist {
+  id          String    @id @default(cuid())
+  workspaceId String
+  dossierId   String    @unique
+  items       Json
+  gateB       Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dossier   PropertyDossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("dossier_checklists")
+}
+
+enum EditalSource {
+  UPLOAD
+  RPA_CAIXA
+  RPA_LEILOEIRO
+  RPA_DOU
+  RPA_TJ
+}
+
+enum EditalStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum UrgencyLevel {
+  CRITICAL
+  HIGH
+  NORMAL
+  EXPIRED
+  POS_48H
+}
+
+enum DeliveryContext {
+  PRE_ARREMATE
+  POS_ARREMATE
+}
+
+model Edital {
+  id               String          @id @default(cuid())
+  workspaceId      String
+  dealId           String          @unique
+  sourceType       EditalSource
+  sourceUrl        String?
+  fileUrl          String?
+  rawText          String?         @db.Text
+  status           EditalStatus    @default(PENDING)
+  leilaoDate       DateTime?
+  leilaoModalidade String?
+  leiloeiro        String?
+  varaJudicial     String?
+  valorAvaliacao   Int?
+  lanceMinimo      Int?
+  debitosEdital    Json?
+  restricoes       Json?
+  prazoBoletoPago  DateTime?
+  urgencyLevel     UrgencyLevel    @default(NORMAL)
+  horasAteEvento   Int?
+  deliveryContext  DeliveryContext @default(PRE_ARREMATE)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal      Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([leilaoDate])
+  @@map("editais")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
