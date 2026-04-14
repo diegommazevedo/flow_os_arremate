@@ -206,7 +206,9 @@ export { resolveWorkflow, clearWorkflowCache } from "./workers/field-workflow-re
 export { verifyVistoriaToken, buildVistoriaUrl } from "./lib/vistoria-token";
 
 export { enqueueEditalProcessing, createEditalProcessor, EDITAL_PROCESSOR_QUEUE } from "./workers/edital-processor";
-export { enqueueEditalHunt, createEditalHunterWorker, EDITAL_HUNTER_QUEUE } from "./workers/edital-hunter";
+export { enqueueEditalHunt, EDITAL_HUNTER_QUEUE } from "./workers/edital-hunter-queue";
+export type { HuntJobData } from "./workers/edital-hunter-queue";
+export { createEditalHunterWorker } from "./workers/edital-hunter";
 export { buildDeliveryMessage } from "./workers/dossier-delivery";
 export type { ResolvedWorkflow, ResolvedWorkflowConfig } from "./workers/field-workflow-resolver";
 export { buildMessageFromTemplate, DEFAULT_WORKFLOW_CONFIG } from "./workers/field-agent-defaults";

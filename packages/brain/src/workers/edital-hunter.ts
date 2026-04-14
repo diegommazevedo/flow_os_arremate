@@ -6,17 +6,14 @@
  * [SEC-03] workspaceId. [SEC-06] AuditLog: EDITAL_HUNT_*.
  */
 
-import { Queue, Worker, type ConnectionOptions } from "bullmq";
+import { Worker, type ConnectionOptions } from "bullmq";
 import { db } from "@flow-os/db";
 import type { EditalSource, Prisma } from "@flow-os/db";
 import { enqueueEditalProcessing } from "./edital-processor";
+import { EDITAL_HUNTER_QUEUE, type HuntJobData } from "./edital-hunter-queue";
 
-export const EDITAL_HUNTER_QUEUE = "edital-hunter";
-
-interface HuntJobData {
-  dealId: string;
-  workspaceId: string;
-}
+export { enqueueEditalHunt, EDITAL_HUNTER_QUEUE } from "./edital-hunter-queue";
+export type { HuntJobData } from "./edital-hunter-queue";
 
 interface HuntResult {
   sourceType: EditalSource;
@@ -241,16 +238,7 @@ async function huntEdital(data: HuntJobData): Promise<void> {
   }
 }
 
-// ── Queue + Worker ───────────────────────────────────────────────────────
-
-export async function enqueueEditalHunt(
-  data: HuntJobData,
-  connection: ConnectionOptions,
-): Promise<void> {
-  const q = new Queue(EDITAL_HUNTER_QUEUE, { connection });
-  await q.add("hunt", data, { removeOnComplete: true, removeOnFail: 20 });
-  await q.close();
-}
+// ── Worker (Playwright só aqui — processo Brain, não Next) ───────────────
 
 export function createEditalHunterWorker(connection: ConnectionOptions): Worker {
   return new Worker(

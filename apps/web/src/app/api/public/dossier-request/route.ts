@@ -13,7 +13,7 @@ import { db } from "@flow-os/db";
 import type { Prisma } from "@flow-os/db";
 import { ensureOpenDealForContact } from "@/lib/lead-deal";
 import { appendAuditLog } from "@/lib/chatguru-api";
-import { dispatchFieldAgents } from "@flow-os/brain";
+import { dispatchFieldAgents } from "@flow-os/brain/workers/field-agent-dispatcher";
 
 // [SEC-08] Sanitize string: trim, remove control chars, limit length
 function sanitize(value: unknown, maxLen: number): string {

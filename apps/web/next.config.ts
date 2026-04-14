@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
     "playwright-core",
     "chromium-bidi",
     "@playwright/test",
+    "electron",
     "otplib",
     "bullmq",
     "ioredis",

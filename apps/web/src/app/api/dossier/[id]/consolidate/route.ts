@@ -1,5 +1,6 @@
 /**
  * POST — pedido de consolidação (SEC-03, SEC-06).
+ * Sempre enfileira no worker Brain (Playwright/PDF só no processo fora do bundle Next).
  */
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, type Prisma } from "@flow-os/db";
 import { getSessionWorkspaceId } from "@/lib/session";
 import { appendAuditLog } from "@/lib/chatguru-api";
-import { consolidateDossier, enqueueDossierConsolidation } from "@flow-os/brain/workers/dossier-consolidator";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -31,18 +31,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     workspaceId,
     action: "DOSSIER_CONSOLIDATION_REQUESTED",
     input: { dossierId, force } as Prisma.InputJsonObject,
-    output: { queued: !force } as Prisma.InputJsonObject,
+    output: { queued: true } as Prisma.InputJsonObject,
   }).catch(() => undefined);
 
-  if (force) {
-    const r = await consolidateDossier(dossierId, workspaceId, { force: true });
-    if (!r.ok) return NextResponse.json({ error: r.error ?? "Falha" }, { status: 400 });
-    return NextResponse.json({ ok: true, mode: "sync" });
-  }
-
+  const { enqueueDossierConsolidation } = await import("@flow-os/brain/workers/dossier-consolidator-queue");
   await enqueueDossierConsolidation(
-    { dossierId, workspaceId, force: false },
+    { dossierId, workspaceId, force },
     { url: process.env["REDIS_URL"] ?? "redis://localhost:6379" },
   );
-  return NextResponse.json({ ok: true, mode: "queued" });
+  return NextResponse.json({ ok: true, mode: "queued", force });
 }

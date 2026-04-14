@@ -20,6 +20,8 @@
     "./workers/mission-profile-advisor": "./src/workers/mission-profile-advisor.ts",
     "./workers/dossier-doc-processor": "./src/workers/dossier-doc-processor.ts",
     "./workers/dossier-consolidator": "./src/workers/dossier-consolidator.ts",
+    "./workers/dossier-consolidator-queue": "./src/workers/dossier-consolidator-queue.ts",
+    "./workers/edital-hunter-queue": "./src/workers/edital-hunter-queue.ts",
     "./token-router": "./src/token-router.ts"
   },
   "scripts": {

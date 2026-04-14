@@ -26,7 +26,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
   // Enfileirar hunt
   try {
-    const { enqueueEditalHunt } = await import("@flow-os/brain/workers/edital-hunter");
+    const { enqueueEditalHunt } = await import("@flow-os/brain/workers/edital-hunter-queue");
     const redisUrl = process.env["REDIS_URL"] ?? "redis://localhost:6379";
     await enqueueEditalHunt({ dealId, workspaceId }, { url: redisUrl });
   } catch (err) {

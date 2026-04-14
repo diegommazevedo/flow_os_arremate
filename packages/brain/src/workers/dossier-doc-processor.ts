@@ -12,7 +12,7 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import { db } from "@flow-os/db";
 import type { Prisma } from "@flow-os/db";
-import { enqueueDossierConsolidation } from "./dossier-consolidator";
+import { enqueueDossierConsolidation } from "./dossier-consolidator-queue";
 
 export const DOSSIER_DOC_QUEUE = "dossier-doc-processor";
 

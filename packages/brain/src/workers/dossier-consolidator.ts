@@ -7,12 +7,14 @@
  * [SEC-06] AuditLog DOSSIER_CONSOLIDATED.
  */
 
-import { Queue, Worker, type ConnectionOptions } from "bullmq";
+import { Worker, type ConnectionOptions } from "bullmq";
 import { db } from "@flow-os/db";
 import type { Edital } from "@flow-os/db";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { DOSSIER_CONSOLIDATOR_QUEUE, type ConsolidateJobData } from "./dossier-consolidator-queue";
 
-export const DOSSIER_CONSOLIDATOR_QUEUE = "dossier-consolidator";
+export { enqueueDossierConsolidation, DOSSIER_CONSOLIDATOR_QUEUE } from "./dossier-consolidator-queue";
+export type { ConsolidateJobData } from "./dossier-consolidator-queue";
 
 export interface DossierDeliverySettings {
   autoDispatchDossier?: boolean;
@@ -43,12 +45,6 @@ export function shouldBypassGateB(edital: Edital | null, settings: DossierDelive
   if (edital.urgencyLevel === "POS_48H") return true;
   const ageHours = (Date.now() - edital.createdAt.getTime()) / 3_600_000;
   return ageHours >= (settings.gateBTimeoutHours ?? 72);
-}
-
-export interface ConsolidateJobData {
-  dossierId: string;
-  workspaceId: string;
-  force?: boolean;
 }
 
 interface BlocoReport {
@@ -307,15 +303,6 @@ export async function consolidateDossier(
   await writeAudit(workspaceId, "DOSSIER_CONSOLIDATED", { dossierId, dealId: dossier.dealId, force: Boolean(opts?.force) }, { hasPdf: Boolean(reportUrl) });
 
   return { ok: true };
-}
-
-export async function enqueueDossierConsolidation(
-  data: ConsolidateJobData,
-  connection: ConnectionOptions,
-): Promise<void> {
-  const q = new Queue(DOSSIER_CONSOLIDATOR_QUEUE, { connection });
-  await q.add("run", data, { removeOnComplete: true, removeOnFail: 50 });
-  await q.close();
 }
 
 export function createDossierConsolidator(connection: ConnectionOptions): Worker {
