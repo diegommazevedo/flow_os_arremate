@@ -9,12 +9,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@flow-os/db";
 import { getSessionWorkspaceId } from "@/lib/session";
 
-type Params = { params: Promise<{ dealId: string }> };
+type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const workspaceId = await getSessionWorkspaceId();
   if (!workspaceId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { dealId } = await params;
+  const { id: dealId } = await params;
 
   const dossier = await db.propertyDossier.findFirst({
     where: { dealId, workspaceId },
