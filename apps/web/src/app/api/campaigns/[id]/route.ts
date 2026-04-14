@@ -1,14 +1,17 @@
 /**
  * GET /api/campaigns/[id] — snapshot para monitor (polling / SSE).
- * [SEC-03] workspaceId da sessão.
+ * PATCH /api/campaigns/[id] — status PAUSED | RUNNING | CANCELLED
+ * [SEC-03] workspaceId da sessão · [SEC-06] CAMPAIGN_STATUS_CHANGED
  */
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@flow-os/db";
+import type { CampaignStatus } from "@flow-os/db";
 import { getSessionWorkspaceId } from "@/lib/session";
+import { appendAuditLog } from "@/lib/chatguru-api";
 
 export async function GET(
   _req: Request,
@@ -168,4 +171,53 @@ export async function GET(
     },
     items: rows,
   });
+}
+
+const PATCH_STATUSES: CampaignStatus[] = ["PAUSED", "RUNNING", "CANCELLED"];
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const workspaceId = await getSessionWorkspaceId();
+  if (!workspaceId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = await params;
+
+  const body = (await req.json().catch(() => null)) as { status?: string } | null;
+  const raw = body?.status;
+  if (!raw || !PATCH_STATUSES.includes(raw as CampaignStatus)) {
+    return NextResponse.json({ error: "Status inválido" }, { status: 400 });
+  }
+  const nextStatus = raw as CampaignStatus;
+
+  const campaign = await db.campaign.findFirst({
+    where: { id, workspaceId },
+    select: { id: true, status: true },
+  });
+  if (!campaign) {
+    return NextResponse.json({ error: "Não encontrada" }, { status: 404 });
+  }
+  if (campaign.status === "CANCELLED") {
+    return NextResponse.json(
+      { error: "Campanha cancelada não pode ser alterada" },
+      { status: 409 },
+    );
+  }
+
+  const updated = await db.campaign.update({
+    where: { id, workspaceId },
+    data: { status: nextStatus },
+    select: { id: true, status: true, name: true },
+  });
+
+  await appendAuditLog({
+    workspaceId,
+    action: "CAMPAIGN_STATUS_CHANGED",
+    input: { campaignId: id, from: campaign.status, to: nextStatus },
+    output: { status: updated.status },
+  }).catch(() => undefined);
+
+  return NextResponse.json(updated);
 }

@@ -81,6 +81,11 @@ export async function POST(req: NextRequest) {
     name?: string;
     type?: CampaignType;
     contactIds?: string[];
+    segmentFilter?: {
+      stageIds?: string[];
+      tipos?: string[];
+      ufs?: string[];
+    };
     ratePerHour?: number;
     startImmediately?: boolean;
     saveDraft?: boolean;
@@ -89,7 +94,8 @@ export async function POST(req: NextRequest) {
 
   const name = (body?.name ?? "").trim().slice(0, 120);
   const type = body?.type ?? "DOSSIER";
-  const contactIds = Array.isArray(body?.contactIds) ? [...new Set(body.contactIds)] : [];
+  let contactIds = Array.isArray(body?.contactIds) ? [...new Set(body.contactIds)] : [];
+  const segmentFilter = body?.segmentFilter ?? null;
   const ratePerHour = Math.max(1, Math.min(500, Number(body?.ratePerHour) || 20));
   const startImmediately = Boolean(body?.startImmediately) && !body?.saveDraft;
   const waMessage = (body?.waMessage ?? "").trim().slice(0, 4096);
@@ -97,11 +103,61 @@ export async function POST(req: NextRequest) {
   if (!name) {
     return NextResponse.json({ error: "name obrigatório" }, { status: 400 });
   }
+
+  // If segmentFilter is provided, resolve contactIds from filter
+  if (segmentFilter && (
+    (segmentFilter.stageIds?.length ?? 0) > 0 ||
+    (segmentFilter.tipos?.length ?? 0) > 0 ||
+    (segmentFilter.ufs?.length ?? 0) > 0
+  )) {
+    const stageIds = segmentFilter.stageIds ?? [];
+    const tipos = (segmentFilter.tipos ?? []).map((t) => t.toLowerCase());
+    const ufs = (segmentFilter.ufs ?? []).map((u) => u.toUpperCase());
+
+    const dealWhere: import("@flow-os/db").Prisma.DealWhereInput = {
+      workspaceId,
+      closedAt: null,
+      contactId: { not: null },
+    };
+    if (stageIds.length > 0) {
+      dealWhere.stageId = { in: stageIds };
+    }
+
+    const deals = await db.deal.findMany({
+      where: dealWhere,
+      select: { contactId: true, meta: true },
+      take: 10000,
+    });
+
+    const resolved = new Set<string>();
+    for (const deal of deals) {
+      const meta = (deal.meta ?? {}) as Record<string, unknown>;
+      if (tipos.length > 0) {
+        const dealTipo = String(meta["tipoPagamento"] ?? meta["tipo_pagamento"] ?? "").toLowerCase();
+        if (!tipos.includes(dealTipo)) continue;
+      }
+      if (ufs.length > 0) {
+        const dealUf = String(meta["imovelUF"] ?? meta["uf"] ?? "").toUpperCase();
+        if (!ufs.includes(dealUf)) continue;
+      }
+      if (deal.contactId) resolved.add(deal.contactId);
+    }
+    contactIds = [...resolved];
+  }
+
   if (contactIds.length === 0) {
     return NextResponse.json({ error: "contactIds obrigatório" }, { status: 400 });
   }
   if (type === "WA_MESSAGE" && !waMessage) {
     return NextResponse.json({ error: "waMessage obrigatório para WA_MESSAGE" }, { status: 400 });
+  }
+
+  const existing = await db.campaign.findFirst({
+    where: { workspaceId, name },
+    select: { id: true },
+  });
+  if (existing) {
+    return NextResponse.json({ error: "Já existe uma campanha com este nome." }, { status: 409 });
   }
 
   const redisUrl = process.env["REDIS_URL"];
@@ -112,12 +168,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const meta =
+  const meta: Record<string, unknown> =
     type === "WA_MESSAGE"
       ? { waMessage }
       : type === "DOSSIER"
         ? { pipeline: "motoboy_dossier" }
         : {};
+
+  if (segmentFilter) {
+    meta["segmentFilter"] = segmentFilter;
+  }
 
   const status = startImmediately ? "RUNNING" : "DRAFT";
 
