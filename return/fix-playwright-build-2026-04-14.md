@@ -12,7 +12,7 @@ Novos módulos só fila (sem Playwright):
   - packages/brain/src/workers/edital-hunter-queue.ts
   - packages/brain/src/workers/dossier-consolidator-queue.ts
 pnpm build local: COMPILE OK (webpack sem erros chromium-bidi/playwright). Falha final EPERM em symlinks do `standalone` no Windows — esperado; Railway/Linux não reproduz.
-Deploy Railway: SUCCESS? — verificar após push (commit hash atual)
+Deploy Railway: SUCCESS? — verificar no dashboard após build (push `a771d4c`)
 ```
 
 ## Comportamento: consolidação `force`
