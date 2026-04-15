@@ -30,9 +30,10 @@ WORKDIR /app
 
 # Instalar dependências
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/brain/package.json  ./packages/brain/
-COPY packages/core/package.json   ./packages/core/
-COPY packages/db/package.json     ./packages/db/
+COPY packages/brain/package.json ./packages/brain/
+COPY packages/core/package.json ./packages/core/
+COPY packages/db/package.json ./packages/db/
+COPY packages/templates/package.json ./packages/templates/
 
 RUN corepack enable && pnpm install --frozen-lockfile --filter @flow-os/brain...
 
@@ -42,4 +43,6 @@ COPY packages/ ./packages/
 # Gerar Prisma client
 RUN pnpm --filter @flow-os/db exec prisma generate
 
-CMD ["node", "--loader", "tsx/esm", "packages/brain/src/worker-entrypoint.ts"]
+WORKDIR /app/packages/brain
+
+CMD ["pnpm", "exec", "tsx", "src/worker-entrypoint.ts"]

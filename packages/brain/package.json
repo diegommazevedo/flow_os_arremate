@@ -22,13 +22,16 @@
     "./workers/dossier-consolidator": "./src/workers/dossier-consolidator.ts",
     "./workers/dossier-consolidator-queue": "./src/workers/dossier-consolidator-queue.ts",
     "./workers/edital-hunter-queue": "./src/workers/edital-hunter-queue.ts",
-    "./token-router": "./src/token-router.ts"
+    "./token-router": "./src/token-router.ts",
+    "./worker-entrypoint": "./src/worker-entrypoint.ts"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "start": "tsx src/worker-entrypoint.ts",
+    "dev:worker": "tsx watch src/worker-entrypoint.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1020.0",
