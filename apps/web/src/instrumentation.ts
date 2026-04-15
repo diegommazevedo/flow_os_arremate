@@ -9,13 +9,17 @@
 let brainWorkersStarted = false;
 
 export async function register() {
-  // Edge runtime não suporta BullMQ / Prisma do brain
+  // Edge: sem BullMQ / brain. Node: `NEXT_RUNTIME` pode ser `nodejs` ou vazio no build.
   if (process.env["NEXT_RUNTIME"] === "edge") return;
   if (process.env["ENABLE_WORKERS"] !== "true") return;
   if (brainWorkersStarted) return;
   brainWorkersStarted = true;
 
-  const { startBrainWorkers } = await import("@flow-os/brain/worker-entrypoint");
+  // Não deixar o webpack analisar o grafo até Playwright (edital-hunter, etc.).
+  const { startBrainWorkers } = await import(
+    /* webpackIgnore: true */
+    "@flow-os/brain/worker-entrypoint"
+  );
   try {
     // Aguardar para os logs do entrypoint (ex.: ✓ CampaignDispatchWorker) saírem
     // antes do Next marcar o servidor como pronto — ligação Redis do BullMQ ainda

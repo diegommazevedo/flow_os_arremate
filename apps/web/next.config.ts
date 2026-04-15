@@ -11,6 +11,19 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      const ext = config.externals;
+      config.externals = [
+        ...(Array.isArray(ext) ? ext : ext != null ? [ext] : []),
+        "playwright",
+        "playwright-core",
+        "electron",
+        /^chromium-bidi(\/.*)?$/,
+      ];
+    }
+    return config;
+  },
   async redirects() {
     return [{ source: "/favicon.ico", destination: "/icons/icon.svg", permanent: false }];
   },
