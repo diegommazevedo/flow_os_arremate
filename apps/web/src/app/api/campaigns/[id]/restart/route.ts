@@ -10,10 +10,8 @@ import { NextResponse } from "next/server";
 import { db } from "@flow-os/db";
 import { getSessionContext } from "@/lib/session";
 import { appendAuditLog } from "@/lib/chatguru-api";
-import {
-  enqueueCampaignDispatchJobs,
-  computeJobDelays,
-} from "@flow-os/brain/workers/campaign-dispatcher";
+import { computeJobDelays } from "@flow-os/brain/workers/campaign-dispatcher";
+import { tryEnqueueCampaignDispatchJobs } from "@/lib/campaign-queue-enqueue";
 
 export async function POST(
   _req: Request,
@@ -96,7 +94,16 @@ export async function POST(
     delayMs: delays[i] ?? 0,
   }));
 
-  await enqueueCampaignDispatchJobs(redisUrl, jobs);
+  const enqueued = await tryEnqueueCampaignDispatchJobs(redisUrl, jobs, "campaign-restart");
+  if (!enqueued.ok) {
+    return NextResponse.json(
+      {
+        error: "Fila indisponível (Redis). Verifique REDIS_URL e rede.",
+        code: "QUEUE_UNAVAILABLE",
+      },
+      { status: 503 },
+    );
+  }
 
   await appendAuditLog({
     workspaceId,

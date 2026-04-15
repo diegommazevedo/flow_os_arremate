@@ -27,9 +27,18 @@ RUN echo "standalone-copy-cache-bust=${CACHE_BUST}"
 # o pacote fonte + Playwright para node_modules do output, e arrancar o servidor com
 # `tsx` para resolver .ts em runtime (até existir build dist dedicado do brain).
 ENV STANDALONE_ROOT=/app/apps/web/.next/standalone
+# Sobrescrever pacotes @flow-os no standalone: o NFT costuma copiar só o que o Next
+# rastreia — o brain (instrumentation) importa símbolos que o barrel de templates exporta
+# mas o módulo rastreado pode não incluir `EMAIL_CLASSIFICATION_RULES` (erro em runtime).
 RUN mkdir -p "${STANDALONE_ROOT}/node_modules/@flow-os" && \
-    rm -rf "${STANDALONE_ROOT}/node_modules/@flow-os/brain" && \
-    cp -a /app/packages/brain "${STANDALONE_ROOT}/node_modules/@flow-os/brain"
+    rm -rf "${STANDALONE_ROOT}/node_modules/@flow-os/brain" \
+           "${STANDALONE_ROOT}/node_modules/@flow-os/templates" \
+           "${STANDALONE_ROOT}/node_modules/@flow-os/core" \
+           "${STANDALONE_ROOT}/node_modules/@flow-os/db" && \
+    cp -a /app/packages/brain "${STANDALONE_ROOT}/node_modules/@flow-os/brain" && \
+    cp -a /app/packages/templates "${STANDALONE_ROOT}/node_modules/@flow-os/templates" && \
+    cp -a /app/packages/core "${STANDALONE_ROOT}/node_modules/@flow-os/core" && \
+    cp -a /app/packages/db "${STANDALONE_ROOT}/node_modules/@flow-os/db"
 # O NFT (outputFileTracingIncludes) pode deixar `standalone/packages/brain` parcial; o runtime/tsx
 # resolve `./workers/email-sync` a partir desse prefixo → Cannot find module …/packages/brain/…
 # Sobrescrever com a árvore fonte completa + pacotes workspace que os workers importam por nome.

@@ -12,10 +12,8 @@ import type { CampaignType } from "@flow-os/db";
 import { getSessionContext } from "@/lib/session";
 import { appendAuditLog } from "@/lib/chatguru-api";
 import { ensureOpenDealForContact } from "@/lib/lead-deal";
-import {
-  enqueueCampaignDispatchJobs,
-  computeJobDelays,
-} from "@flow-os/brain/workers/campaign-dispatcher";
+import { computeJobDelays } from "@flow-os/brain/workers/campaign-dispatcher";
+import { tryEnqueueCampaignDispatchJobs } from "@/lib/campaign-queue-enqueue";
 
 export async function GET(req: NextRequest) {
   const session = await getSessionContext();
@@ -249,7 +247,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (startImmediately && jobs.length > 0 && redisUrl) {
-    await enqueueCampaignDispatchJobs(redisUrl, jobs);
+    const enqueued = await tryEnqueueCampaignDispatchJobs(redisUrl, jobs, "campaigns-post");
+    if (!enqueued.ok) {
+      return NextResponse.json(
+        {
+          id: campaign.id,
+          status,
+          itemsCreated: jobs.length,
+          error:
+            "Campanha criada, mas a fila Redis falhou ao enfileirar. Configure REDIS_URL ou use Disparar quando a fila estiver disponível.",
+          code: "QUEUE_UNAVAILABLE",
+        },
+        { status: 503 },
+      );
+    }
   }
 
   await appendAuditLog({

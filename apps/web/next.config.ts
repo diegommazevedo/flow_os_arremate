@@ -1,5 +1,10 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const withPWA = withPWAInit({
   dest:    "public",
@@ -11,6 +16,12 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Monorepo: o trace do standalone precisa de alcançar `packages/brain` (instrumentation
+  // com webpackIgnore não leva o grafo sozinho). Isto puxa workers + deps nativas ao NFT.
+  outputFileTracingRoot: path.join(__dirname, "..", ".."),
+  outputFileTracingIncludes: {
+    "/*": ["../../packages/brain/**/*"],
+  },
   webpack: (config, { isServer }) => {
     if (isServer) {
       const ext = config.externals;
