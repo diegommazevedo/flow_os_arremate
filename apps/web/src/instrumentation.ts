@@ -16,7 +16,12 @@ export async function register() {
   brainWorkersStarted = true;
 
   const { startBrainWorkers } = await import("@flow-os/brain/worker-entrypoint");
-  void startBrainWorkers().catch((err) => {
+  try {
+    // Aguardar para os logs do entrypoint (ex.: ✓ CampaignDispatchWorker) saírem
+    // antes do Next marcar o servidor como pronto — ligação Redis do BullMQ ainda
+    // pode completar em background logo a seguir.
+    await startBrainWorkers();
+  } catch (err) {
     console.error("[flowos] ENABLE_WORKERS: falha ao iniciar brain workers:", err);
-  });
+  }
 }
