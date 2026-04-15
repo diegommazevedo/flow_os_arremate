@@ -9,7 +9,8 @@
 let brainWorkersStarted = false;
 
 export async function register() {
-  if (process.env["NEXT_RUNTIME"] !== "nodejs") return;
+  // Edge runtime não suporta BullMQ / Prisma do brain
+  if (process.env["NEXT_RUNTIME"] === "edge") return;
   if (process.env["ENABLE_WORKERS"] !== "true") return;
   if (brainWorkersStarted) return;
   brainWorkersStarted = true;
