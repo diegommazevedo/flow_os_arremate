@@ -5,6 +5,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/session";
 
 /**
+ * Base URL para o servidor chamar a si próprio (create/update).
+ * Em Railway/containers, `req.nextUrl.origin` (HTTPS público) falha muitas vezes
+ * com "fetch failed" (hairpin/TLS). Preferir loopback + PORT.
+ */
+function internalApiOrigin(): string {
+  const explicit = process.env["INTERNAL_FETCH_BASE"]?.replace(/\/$/, "");
+  if (explicit && /^https?:\/\//i.test(explicit)) return explicit;
+  const port = process.env["PORT"] ?? "3000";
+  return `http://127.0.0.1:${port}`;
+}
+
+/**
  * Persistência única de WhatsApp (Meta ou Evolution): sem connect/QR/Evolution.
  * Com `integrationId` no body → PUT update; sem → POST create.
  */
@@ -78,15 +90,25 @@ export async function POST(req: NextRequest) {
       typeof integrationIdRaw === "string" && integrationIdRaw.length > 0 ? integrationIdRaw : undefined;
 
     const cookie = req.headers.get("cookie") ?? "";
-    const origin = req.nextUrl.origin;
+    const base = internalApiOrigin();
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+    const proto = req.headers.get("x-forwarded-proto") ?? "https";
+    const forwardHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      cookie,
+    };
+    if (host) {
+      forwardHeaders["x-forwarded-host"] = host;
+      forwardHeaders["x-forwarded-proto"] = proto;
+    }
 
     if (integrationId) {
       const { integrationId: _omit, ...patch } = body;
       return forwardJson(
-        `${origin}/api/integrations/whatsapp/${encodeURIComponent(integrationId)}/update`,
+        `${base}/api/integrations/whatsapp/${encodeURIComponent(integrationId)}/update`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json", cookie },
+          headers: forwardHeaders,
           body: JSON.stringify(patch),
         },
         "update",
@@ -94,10 +116,10 @@ export async function POST(req: NextRequest) {
     }
 
     return forwardJson(
-      `${origin}/api/integrations/whatsapp/create`,
+      `${base}/api/integrations/whatsapp/create`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json", cookie },
+        headers: forwardHeaders,
         body: JSON.stringify(body),
       },
       "create",
