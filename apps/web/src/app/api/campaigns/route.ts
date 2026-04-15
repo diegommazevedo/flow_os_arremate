@@ -17,15 +17,20 @@ import {
   computeJobDelays,
 } from "@flow-os/brain/workers/campaign-dispatcher";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSessionContext();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { workspaceId } = session;
 
+  const includeArchived = req.nextUrl.searchParams.get("includeArchived") === "true";
+
   const list = await db.campaign.findMany({
-    where: { workspaceId },
+    where: {
+      workspaceId,
+      ...(includeArchived ? {} : { archivedAt: null }),
+    },
     orderBy: { updatedAt: "desc" },
     take: 100,
     include: {
@@ -62,6 +67,8 @@ export async function GET() {
         ratePerHour: c.ratePerHour,
         dossierReady,
         progressPct: pct,
+        archivedAt: c.archivedAt?.toISOString() ?? null,
+        createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
       };
     }),

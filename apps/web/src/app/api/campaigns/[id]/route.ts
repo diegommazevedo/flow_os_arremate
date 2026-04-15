@@ -185,20 +185,63 @@ export async function PATCH(
   }
   const { id } = await params;
 
-  const body = (await req.json().catch(() => null)) as { status?: string } | null;
+  const body = (await req.json().catch(() => null)) as {
+    status?: string;
+    action?: string;
+  } | null;
+
+  const campaign = await db.campaign.findFirst({
+    where: { id, workspaceId },
+    select: { id: true, status: true, name: true, archivedAt: true },
+  });
+  if (!campaign) {
+    return NextResponse.json({ error: "Não encontrada" }, { status: 404 });
+  }
+
+  // Handle archive/unarchive actions
+  if (body?.action === "archive") {
+    if (!["COMPLETED", "CANCELLED"].includes(campaign.status)) {
+      return NextResponse.json(
+        { error: "Só é possível arquivar campanhas concluídas ou canceladas" },
+        { status: 409 },
+      );
+    }
+    const updated = await db.campaign.update({
+      where: { id, workspaceId },
+      data: { archivedAt: new Date() },
+      select: { id: true, status: true, name: true, archivedAt: true },
+    });
+    await appendAuditLog({
+      workspaceId,
+      action: "CAMPAIGN_ARCHIVED",
+      input: { campaignId: id },
+      output: { archivedAt: updated.archivedAt?.toISOString() ?? null },
+    }).catch(() => undefined);
+    return NextResponse.json(updated);
+  }
+
+  if (body?.action === "unarchive") {
+    const updated = await db.campaign.update({
+      where: { id, workspaceId },
+      data: { archivedAt: null },
+      select: { id: true, status: true, name: true, archivedAt: true },
+    });
+    await appendAuditLog({
+      workspaceId,
+      action: "CAMPAIGN_UNARCHIVED",
+      input: { campaignId: id },
+      output: {},
+    }).catch(() => undefined);
+    return NextResponse.json(updated);
+  }
+
+  // Handle status change
   const raw = body?.status;
   if (!raw || !PATCH_STATUSES.includes(raw as CampaignStatus)) {
     return NextResponse.json({ error: "Status inválido" }, { status: 400 });
   }
   const nextStatus = raw as CampaignStatus;
 
-  const campaign = await db.campaign.findFirst({
-    where: { id, workspaceId },
-    select: { id: true, status: true },
-  });
-  if (!campaign) {
-    return NextResponse.json({ error: "Não encontrada" }, { status: 404 });
-  }
   if (campaign.status === "CANCELLED") {
     return NextResponse.json(
       { error: "Campanha cancelada não pode ser alterada" },
@@ -220,4 +263,44 @@ export async function PATCH(
   }).catch(() => undefined);
 
   return NextResponse.json(updated);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const workspaceId = await getSessionWorkspaceId();
+  if (!workspaceId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = await params;
+
+  const campaign = await db.campaign.findFirst({
+    where: { id, workspaceId },
+    select: { id: true, status: true, name: true, archivedAt: true },
+  });
+  if (!campaign) {
+    return NextResponse.json({ error: "Não encontrada" }, { status: 404 });
+  }
+
+  // Only allow delete if archived, CANCELLED, or DRAFT
+  if (!campaign.archivedAt && !["CANCELLED", "DRAFT"].includes(campaign.status)) {
+    return NextResponse.json(
+      { error: "Arquive a campanha antes de excluir, ou cancele-a primeiro" },
+      { status: 409 },
+    );
+  }
+
+  // Delete items first (FK constraint)
+  await db.campaignItem.deleteMany({ where: { campaignId: id, workspaceId } });
+  await db.campaign.delete({ where: { id, workspaceId } });
+
+  await appendAuditLog({
+    workspaceId,
+    action: "CAMPAIGN_DELETED",
+    input: { campaignId: id, name: campaign.name },
+    output: {},
+  }).catch(() => undefined);
+
+  return NextResponse.json({ ok: true });
 }

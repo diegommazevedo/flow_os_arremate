@@ -1186,6 +1186,7 @@ model Campaign {
   scheduledAt  DateTime?
   startedAt    DateTime?
   completedAt  DateTime?
+  archivedAt   DateTime?
   /// Payload extra: waMessage, filtros usados na criação, etc.
   meta         Json           @default("{}")
   createdAt    DateTime       @default(now())
