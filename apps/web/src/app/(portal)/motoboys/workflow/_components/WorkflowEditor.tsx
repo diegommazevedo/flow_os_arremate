@@ -63,18 +63,48 @@ function EditorInner() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"detail" | "config">("detail");
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [listRefreshing, setListRefreshing] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const selectorRef = useRef<HTMLDivElement>(null);
 
-  // Load workflow list
-  const loadList = useCallback(async () => {
+  /** Recarrega a lista. `selectId` força a seleção desse workflow (ex.: recém-criado). */
+  const loadList = useCallback(async (opts?: { selectId?: string | null }) => {
     const res = await fetch("/api/field-workflows");
+    if (!res.ok) return;
     const data = await res.json();
-    setWorkflows(data.items ?? []);
-    if (!workflowId && data.items?.length > 0) {
-      const active = data.items.find((w: { isActive: boolean }) => w.isActive);
-      setWorkflowId(active?.id ?? data.items[0].id);
+    const items = (data.items ?? []) as { id: string; name: string; isActive: boolean }[];
+    setWorkflows(items);
+    setWorkflowId((prev) => {
+      const prefer = opts?.selectId;
+      if (prefer && items.some((w) => w.id === prefer)) return prefer;
+      if (prev && items.some((w) => w.id === prev)) return prev;
+      if (items.length === 0) return null;
+      const active = items.find((w) => w.isActive);
+      const first = items[0];
+      return active?.id ?? first?.id ?? null;
+    });
+  }, []);
+
+  const refreshWorkflowList = useCallback(async () => {
+    setListRefreshing(true);
+    try {
+      await loadList();
+    } finally {
+      setListRefreshing(false);
     }
-  }, [workflowId]);
+  }, [loadList]);
+
+  useEffect(() => {
+    if (!selectorOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const el = selectorRef.current;
+      const t = e.target;
+      if (el && t instanceof globalThis.Node && !el.contains(t)) setSelectorOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [selectorOpen]);
 
   // Load full workflow
   const loadWorkflow = useCallback(async () => {
@@ -111,7 +141,9 @@ function EditorInner() {
     setEdges(rfEdges);
   }, [workflowId, setNodes, setEdges]);
 
-  useEffect(() => { loadList(); }, [loadList]);
+  useEffect(() => {
+    void loadList();
+  }, [loadList]);
   useEffect(() => { loadWorkflow(); }, [loadWorkflow]);
 
   // Handle new connection
@@ -208,6 +240,7 @@ function EditorInner() {
     });
 
     setSaving(false);
+    void loadList();
     loadWorkflow(); // reload with fresh IDs
   };
 
@@ -215,30 +248,35 @@ function EditorInner() {
   const activate = async () => {
     if (!workflowId) return;
     await fetch(`/api/field-workflows/${workflowId}/activate`, { method: "POST" });
-    loadList();
+    await loadList();
     loadWorkflow();
   };
 
-  // Create default seed
-  const createDefault = async () => {
+  const handleCreateWorkflow = async (name: string) => {
     const res = await fetch("/api/field-workflows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Workflow Padrão", cloneFromDefault: false }),
+      body: JSON.stringify({ name: name.trim().slice(0, 120) || "Novo Workflow", cloneFromDefault: false }),
     });
-    const data = await res.json();
-    if (data.id) {
-      setWorkflowId(data.id);
-      loadList();
+    const data = (await res.json()) as { id?: string; error?: string };
+    if (!res.ok) {
+      window.alert(data.error ?? "Erro ao criar workflow");
+      return;
     }
+    if (!data.id) return;
+    setSelectorOpen(false);
+    await loadList({ selectId: data.id });
   };
+
+  // Primeiro workflow (lista vazia)
+  const createFirstWorkflow = () => void handleCreateWorkflow("Workflow Padrão");
 
   const selectedData = selectedNode?.data as StepNodeData | undefined;
 
   return (
     <div className="flex h-[calc(100vh-48px)] flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 border-b px-4 py-2"
+      {/* Toolbar — z-index acima do canvas React Flow + menu absoluto */}
+      <div className="relative z-[10001] flex items-center gap-3 border-b px-4 py-2"
         style={{ borderColor: "var(--border-subtle)", background: "var(--surface-raised)" }}>
         <Link href="/motoboys" className="text-sm" style={{ color: "var(--text-accent)" }}>
           &larr; Voltar
@@ -246,15 +284,80 @@ function EditorInner() {
         <div className="h-5 w-px" style={{ background: "var(--border-default)" }} />
 
         {workflows.length > 0 ? (
-          <select value={workflowId ?? ""} onChange={(e) => setWorkflowId(e.target.value)}
-            className="rounded-md border px-3 py-1 text-sm"
-            style={{ background: "var(--surface-base)", borderColor: "var(--border-subtle)", color: "var(--text-primary)" }}>
-            {workflows.map((w) => (
-              <option key={w.id} value={w.id}>{w.name} {w.isActive ? "(ativo)" : ""}</option>
-            ))}
-          </select>
+          <div ref={selectorRef} className="relative flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSelectorOpen((o) => !o)}
+              className="flex min-w-[200px] items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-sm"
+              style={{ background: "var(--surface-base)", borderColor: "var(--border-subtle)", color: "var(--text-primary)" }}
+              aria-expanded={selectorOpen}
+              aria-haspopup="listbox"
+            >
+              <span className="truncate">
+                {workflows.find((w) => w.id === workflowId)?.name ?? "Selecionar…"}
+                {workflows.find((w) => w.id === workflowId)?.isActive ? " (ativo)" : ""}
+              </span>
+              <span className="shrink-0 text-xs" style={{ color: "var(--text-tertiary)" }}>▾</span>
+            </button>
+            <button
+              type="button"
+              title="Atualizar lista de workflows"
+              disabled={listRefreshing}
+              onClick={() => void refreshWorkflowList()}
+              className="rounded-md border px-2 py-1 text-sm disabled:opacity-50"
+              style={{ borderColor: "var(--border-subtle)", color: "var(--text-accent)", background: "var(--surface-base)" }}
+            >
+              ↺
+            </button>
+            {selectorOpen && (
+              <div
+                className="absolute left-0 top-full z-[9999] mt-1 max-h-[min(320px,70vh)] min-w-[260px] overflow-y-auto rounded-lg border py-1 shadow-lg"
+                style={{
+                  background: "var(--surface-base)",
+                  borderColor: "var(--border-subtle)",
+                }}
+                role="listbox"
+              >
+                {workflows.map((w) => (
+                  <button
+                    key={w.id}
+                    type="button"
+                    role="option"
+                    aria-selected={w.id === workflowId}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:opacity-90"
+                    style={{
+                      background: w.id === workflowId ? "var(--surface-hover)" : "transparent",
+                      color: "var(--text-primary)",
+                    }}
+                    onClick={() => {
+                      setWorkflowId(w.id);
+                      setSelectorOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{w.name}</span>
+                    {w.isActive && (
+                      <span className="shrink-0 text-xs" style={{ color: "var(--color-success)" }}>ativo</span>
+                    )}
+                  </button>
+                ))}
+                <div className="my-1 h-px" style={{ background: "var(--border-subtle)" }} />
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm font-medium"
+                  style={{ color: "var(--text-accent)" }}
+                  onClick={() => {
+                    const name = window.prompt("Nome do novo workflow:", "Novo Workflow");
+                    if (name === null) return;
+                    void handleCreateWorkflow(name.trim() || "Novo Workflow");
+                  }}
+                >
+                  + Novo workflow…
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
-          <button onClick={createDefault} className="rounded-md px-3 py-1 text-sm text-white"
+          <button onClick={createFirstWorkflow} className="rounded-md px-3 py-1 text-sm text-white"
             style={{ background: "var(--text-accent)" }}>
             Criar Workflow
           </button>
@@ -289,8 +392,8 @@ function EditorInner() {
           <StepPalette />
         </div>
 
-        {/* Canvas */}
-        <div className="flex-1" ref={wrapperRef} onDragOver={onDragOver} onDrop={onDrop}>
+        {/* Canvas — stacking abaixo da toolbar */}
+        <div className="relative z-0 flex-1" ref={wrapperRef} onDragOver={onDragOver} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
