@@ -24,10 +24,12 @@ import {
   resolveMissionProfileForDeal,
 } from "./mission-profile-resolver";
 import { ensureDossierChecklist } from "../lib/dossier-checklist-defaults";
+import { buildVistoriaUrl } from "../lib/vistoria-token";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
 interface DealMeta {
+  imovelEndereco?: string;
   imovelCidade?: string;
   imovelUF?: string;
   cidade?: string;
@@ -358,23 +360,37 @@ export async function sendAcceptanceDetails(
   if (!instance) return;
 
   const meta = (assignment.deal.meta ?? {}) as DealMeta;
-  const endereco = meta.endereco ?? "endereço não informado";
+  const endereco = meta.imovelEndereco ?? meta.endereco ?? "";
+  const cidadePart = meta.imovelCidade ?? meta.cidade ?? "";
+  const ufPart = meta.imovelUF ?? meta.uf ?? "";
+  const cidade =
+    [cidadePart, ufPart].filter((p) => p.trim().length > 0).join("/") || "";
   const preco = Number(assignment.priceAgreed ?? assignment.agent.pricePerVisit);
+
+  const existingMeta = (assignment.meta ?? {}) as Record<string, unknown>;
+  const token = assignment.pwaAccessToken;
+  const linkVistoria = buildVistoriaUrl(token);
+
+  await db.fieldAssignment.update({
+    where: { id: assignmentId, workspaceId },
+    data: {
+      meta: { ...existingMeta, vistoriaToken: token },
+    },
+  });
 
   // Usar template do workflow (fallback para hardcoded)
   const workflow = await resolveWorkflow(workspaceId);
   const prazoH = effectiveDeadlineHours(workflow.config.deadlineHours, assignment.profile);
-  const msg = buildMessageFromTemplate(
-    workflow.templates["send_details"] ?? "",
-    { endereco, valor: preco, prazo: prazoH },
-  );
+  const msg = buildMessageFromTemplate(workflow.templates["send_details"] ?? "", {
+    nome: assignment.agent.partner.name,
+    endereco: endereco || "endereço não informado",
+    cidade: cidade || "cidade não informada",
+    prazo: String(prazoH),
+    valor: preco,
+    linkVistoria,
+  });
 
-  // Adicionar link PWA de vistoria
-  const { buildVistoriaUrl } = await import("../lib/vistoria-token");
-  const vistoriaUrl = buildVistoriaUrl(assignment.pwaAccessToken);
-  const msgComLink = `${msg}\n\n📋 Formulário de vistoria:\n${vistoriaUrl}`;
-
-  await evolutionApi.sendText(instance, assignment.agent.partner.phone, msgComLink, workspaceId);
+  await evolutionApi.sendText(instance, assignment.agent.partner.phone, msg, workspaceId);
 
   await db.fieldAssignment.update({
     where: { id: assignmentId, workspaceId },

@@ -18,19 +18,36 @@ export const DEFAULT_MSG1_TEMPLATE = [
   "Interessado em saber mais?",
 ].join("\n");
 
+/** Chaves substituíveis em Msg2 (send_details) — manter alinhado ao dispatcher e ao MessageEditor. */
+export const MSG2_TEMPLATE_VAR_KEYS = [
+  "nome",
+  "endereco",
+  "cidade",
+  "prazo",
+  "valor",
+  "linkVistoria",
+] as const;
+
+export type Msg2TemplateVarKey = (typeof MSG2_TEMPLATE_VAR_KEYS)[number];
+
 export const DEFAULT_MSG2_TEMPLATE = [
   "Ótimo! Segue o endereço do imóvel:",
   "",
-  "📍 {{endereco}}",
+  "📍 {{endereco}} — {{cidade}}",
+  "",
+  "⏰ Prazo: {{prazo}}h",
+  "💰 Valor combinado: R$ {{valor}}",
+  "",
+  "📋 Acesse o formulário de vistoria pelo link:",
+  "{{linkVistoria}}",
+  "",
+  "Siga o passo a passo para registrar as evidências.",
   "",
   "Precisamos de:",
   "📸 3 fotos externas da fachada",
   "📸 2 fotos da rua/vizinhança",
   "🎥 1 vídeo curto (30s) da área",
   "🎙 Áudio descrevendo: estado aparente, acesso, segurança percebida",
-  "",
-  "Valor: R$ {{valor}}",
-  "Prazo: até {{prazo}}h",
   "",
   "Pode fazer?",
 ].join("\n");

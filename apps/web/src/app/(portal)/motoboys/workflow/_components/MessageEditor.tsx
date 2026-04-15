@@ -2,11 +2,22 @@
 
 import { useRef } from "react";
 
+const VARIAVEIS = [
+  { key: "nome", label: "{{nome}}", desc: "Nome do motoboy" },
+  { key: "endereco", label: "{{endereco}}", desc: "Endereço do imóvel" },
+  { key: "cidade", label: "{{cidade}}", desc: "Cidade/UF" },
+  { key: "prazo", label: "{{prazo}}", desc: "Prazo em horas" },
+  { key: "valor", label: "{{valor}}", desc: "Valor combinado" },
+  { key: "linkVistoria", label: "{{linkVistoria}}", desc: "Link do PWA de vistoria" },
+] as const;
+
 const SAMPLE_VARS: Record<string, string> = {
   nome: "João Silva",
   endereco: "Rua das Flores, 123 — São Paulo/SP",
   valor: "80.00",
   prazo: "48",
+  cidade: "São Paulo/SP",
+  linkVistoria: "https://app.exemplo/vistoria/clxxxxxxxx",
 };
 
 interface Props {
@@ -15,7 +26,7 @@ interface Props {
   onChange: (body: string) => void;
 }
 
-export function MessageEditor({ body, variables, onChange }: Props) {
+export function MessageEditor({ body, variables: _variables, onChange }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const insertVar = (v: string) => {
@@ -42,15 +53,16 @@ export function MessageEditor({ body, variables, onChange }: Props) {
           Variáveis disponíveis
         </label>
         <div className="flex flex-wrap gap-1">
-          {["nome", "endereco", "valor", "prazo"].map((v) => (
+          {VARIAVEIS.map((item) => (
             <button
-              key={v}
+              key={item.key}
               type="button"
-              onClick={() => insertVar(v)}
+              title={item.desc}
+              onClick={() => insertVar(item.key)}
               className="rounded px-2 py-0.5 text-xs font-mono"
               style={{ background: "var(--surface-hover)", color: "var(--text-accent)" }}
             >
-              {`{{${v}}}`}
+              {item.label}
             </button>
           ))}
         </div>
