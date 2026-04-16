@@ -6,7 +6,7 @@
  * [SEC-08] defaultSanitizer.clean() em todo texto externo
  */
 
-import { EMAIL_CLASSIFICATION_RULES } from "@flow-os/templates/real_estate_caixa";
+import { EMAIL_CLASSIFICATION_RULES } from "@flow-os/templates";
 import { db } from "@flow-os/db";
 import { defaultSanitizer } from "@flow-os/core";
 import Imap from "imap";

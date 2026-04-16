@@ -555,7 +555,7 @@ export const EMAIL_CLASSIFICATION_RULES = {
   chbPattern: /\b(\d{13})\b/,
   /** Chave em Deal.meta para localizar o deal pelo CHB [P-01] */
   dealMetaKey: 'imovelId',
-} as const
+} as const;
 
 export interface ExtendedLabels {
   deal: string;
