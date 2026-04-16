@@ -14,6 +14,14 @@ RUN pnpm install --frozen-lockfile
 COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
 RUN ./packages/db/node_modules/.bin/prisma generate --schema=./packages/db/prisma/schema.prisma
+# O next build executa cÃ³digo server-side em "Collecting page data". Garantir engine
+# do Prisma tambÃ©m no escopo de /app/apps/web evita erro "engine-not-found" no build.
+RUN PRISMA_DIR=$(ls -d /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client | head -n 1) && \
+    [ -n "$PRISMA_DIR" ] && \
+    mkdir -p /app/apps/web/.prisma/client && \
+    cp -r "$PRISMA_DIR"/. /app/apps/web/.prisma/client/ && \
+    mkdir -p /app/apps/web/node_modules/.prisma/client && \
+    cp -r "$PRISMA_DIR"/. /app/apps/web/node_modules/.prisma/client/
 WORKDIR /app/apps/web
 RUN pnpm build
 
